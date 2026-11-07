@@ -219,12 +219,12 @@
         let weaponSwitchCooldown = 0;
         let rightStickWeaponAxisWasActive = false;
 
-        const SHOT_AUDIO_URL = 'https://raw.githubusercontent.com/MarioDuran/VariableOverload/main/shot.mp3';
+        const SHOT_AUDIO_URL = './shot_comprimido.mp3'; // Disparo del protagonista: MP3 aportado, sin capas sintetizadas
         const SOUNDTRACK_AUDIO_URL = 'https://raw.githubusercontent.com/MarioDuran/VariableOverload/main/Siege_of_the_Colossus.mp3';
-        const BOSS_CHARGE_AUDIO_URL = 'https://raw.githubusercontent.com/MarioDuran/VariableOverload/main/power-beam-sound-effect.mp3';
-        const BOSS_SHOOT_AUDIO_URL = 'https://raw.githubusercontent.com/MarioDuran/VariableOverload/main/ice-beam-fire-sound-effect.mp3';
-        const STARTING_UP_AUDIO_URL = './StartingUp.mp3'; // StartingUp(2).m4a convertido a MP3
-        const ROBOT_STEP_AUDIO_URL = './RobotStep.mp3'; // RobotStep(1).mp3 sin número
+        const BOSS_SHOOT_AUDIO_URL = './power-beam-sound-effect.mp3'; // Únicamente al disparar el orbe de Ultron
+        const STARTING_UP_AUDIO_URL = './StartingUp.mp3'; // Sonido/rugido inicial anterior del mecha
+        const ROBOT_POWERUP_AUDIO_URL = './robot_encendido.mp3'; // Nuevo encendido: inicia al terminar el rugido
+        const ROBOT_STEP_AUDIO_URL = './RobotStep.mp3'; // Pisadas sincronizadas
 
         const soundCache = new Map();
         function playSoundResource(url, volume = 1.0) {
@@ -241,12 +241,74 @@
             audio.play().catch(() => {});
         }
 
-        // Los dos audios vienen dentro de public/: descarga/pre-carga sin depender de GitHub Raw.
-        for (const url of [STARTING_UP_AUDIO_URL, ROBOT_STEP_AUDIO_URL]) {
+
+        // Reutiliza unas pocas voces HTMLAudio para los disparos, sin generar osciladores
+        // WebAudio y sin crear indefinidamente elementos de audio en Quest.
+        const fireAudioPools = new Map();
+        function playPooledFireSound(url, volume = 1.0, maxVoices = 8) {
+            let pool = fireAudioPools.get(url);
+            if (!pool) {
+                pool = { voices: [], nextVoice: 0 };
+                fireAudioPools.set(url, pool);
+            }
+            let voice = pool.voices.find(a => a.paused || a.ended);
+            if (!voice && pool.voices.length < maxVoices) {
+                const base = soundCache.get(url) || new Audio(url);
+                voice = base.cloneNode(true);
+                voice.preload = 'auto';
+                pool.voices.push(voice);
+            }
+            if (!voice) {
+                // Limite de voces: sustituye la mas antigua en vez de añadir otra.
+                voice = pool.voices[pool.nextVoice];
+                pool.nextVoice = (pool.nextVoice + 1) % pool.voices.length;
+                voice.pause();
+            }
+            voice.volume = Math.min(1, Math.max(0, volume));
+            try { voice.currentTime = 0; } catch (err) {}
+            voice.play().catch(() => {});
+        }
+
+        // Audios locales, precargados; el rugido termina ANTES de comenzar el encendido.
+        for (const url of [STARTING_UP_AUDIO_URL, ROBOT_POWERUP_AUDIO_URL, ROBOT_STEP_AUDIO_URL, SHOT_AUDIO_URL, BOSS_SHOOT_AUDIO_URL]) {
             const clip = new Audio(url);
             clip.preload = 'auto';
             clip.load();
             soundCache.set(url, clip);
+        }
+
+        // La secuencia tiene instancias de audio propias para no superponer rugido y encendido.
+        // El token implícito de referencia impide que un 'ended' antiguo se dispare tras reiniciar.
+        let awakeningSoundSequence = null;
+        function stopAwakeningSoundSequence() {
+            const previous = awakeningSoundSequence;
+            awakeningSoundSequence = null;
+            if (!previous) return;
+            for (const audio of [previous.roar, previous.powerUp]) {
+                audio.onended = null;
+                audio.onerror = null;
+                audio.pause();
+                try { audio.currentTime = 0; } catch (err) {}
+            }
+        }
+        function startAwakeningSoundSequence() {
+            stopAwakeningSoundSequence();
+            const roar = soundCache.get(STARTING_UP_AUDIO_URL).cloneNode(true);
+            const powerUp = soundCache.get(ROBOT_POWERUP_AUDIO_URL).cloneNode(true);
+            roar.volume = 1.0;
+            powerUp.volume = 0.92;
+            const sequence = { roar, powerUp };
+            awakeningSoundSequence = sequence;
+            let startedPowerUp = false;
+            const playPowerUp = () => {
+                if (startedPowerUp || awakeningSoundSequence !== sequence ||
+                    !gameState.ultronAwakening || gameState.isGameOver) return;
+                startedPowerUp = true;
+                powerUp.play().catch(() => {});
+            };
+            roar.onended = playPowerUp;
+            roar.onerror = playPowerUp; // Si faltara el clip anterior, intenta el nuevo.
+            roar.play().catch(playPowerUp);
         }
 
         function triggerControllerHaptics(handedness = 'both', intensity = 0.5, durationMs = 40) {
@@ -351,63 +413,18 @@
             }
 
             playCannonBeamBlast() {
-                this.init();
-                playSoundResource(BOSS_SHOOT_AUDIO_URL, 0.95);
-                if (!this.ctx) return;
-                const now = this.ctx.currentTime;
-                const osc = this.ctx.createOscillator();
-                const subOsc = this.ctx.createOscillator();
-                const lfo = this.ctx.createOscillator();
-                const lfoGain = this.ctx.createGain();
-                const gain = this.ctx.createGain();
-
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(145, now);
-                subOsc.type = 'square';
-                subOsc.frequency.setValueAtTime(72.5, now);
-
-                lfo.type = 'sine';
-                lfo.frequency.setValueAtTime(42, now);
-                lfoGain.gain.setValueAtTime(65, now);
-
-                lfo.connect(lfoGain);
-                lfoGain.connect(osc.frequency);
-
-                gain.gain.setValueAtTime(0.38, now);
-                gain.gain.exponentialRampToValueAtTime(0.008, now + 2.3);
-
-                osc.connect(gain);
-                subOsc.connect(gain);
-                gain.connect(this.masterGain);
-
-                osc.start(now);
-                subOsc.start(now);
-                lfo.start(now);
-                osc.stop(now + 2.35);
-                subOsc.stop(now + 2.35);
-                lfo.stop(now + 2.35);
+                // Compatibilidad con cualquier ataque de cañón: mismo MP3, sin síntesis adicional.
+                this.playBossShoot();
             }
 
             playPlayerShoot() {
-                this.init();
-                playSoundResource(SHOT_AUDIO_URL, 0.88);
-                if (!this.ctx) return;
-                const now = this.ctx.currentTime;
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(1350, now);
-                osc.frequency.exponentialRampToValueAtTime(180, now + 0.12);
-                gain.gain.setValueAtTime(0.22, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
-                osc.connect(gain);
-                gain.connect(this.masterGain);
-                osc.start(now);
-                osc.stop(now + 0.13);
+                // El único sonido del disparo es el MP3 subido por el usuario.
+                playPooledFireSound(SHOT_AUDIO_URL, 0.88, 8);
             }
 
-            playMechaStartingUp() {
-                playSoundResource(STARTING_UP_AUDIO_URL, 1.0);
+            playMechaAwakeningSequence() {
+                this.init();
+                startAwakeningSoundSequence();
             }
 
             playJetpackEquip() {
@@ -468,12 +485,9 @@
                 subOsc.stop(now + 0.49);
             }
 
-            playBossHandCharge() {
-                playSoundResource(BOSS_CHARGE_AUDIO_URL, 0.92);
-            }
-
             playBossShoot() {
-                playSoundResource(BOSS_SHOOT_AUDIO_URL, 0.92);
+                // Se reproduce al lanzar el proyectil, no mientras se carga.
+                playPooledFireSound(BOSS_SHOOT_AUDIO_URL, 0.92, 2);
             }
 
             playCriticalHit() {
@@ -824,6 +838,7 @@
             document.body.classList.add('game-active');
             sound.init();
             gameState.isRunning = true;
+            startJarvisWelcomeOnce();
         });
         renderer.xr.addEventListener('sessionend', () => {
             document.body.classList.remove('vr-active');
@@ -850,6 +865,163 @@
         vrHudMesh.position.set(0, -0.12, -1.35);
         vrHudMesh.rotation.x = -0.03;
         camera.add(vrHudMesh);
+
+
+        // ============================================================================
+        // JARVIS: notificaciones VR 3D procedentes del diseño de index (5).html.
+        // Copia el estilo de sus cuadros de diálogo, sustituyendo TecGPT por Jarvis.
+        // El MP3 se intenta reproducir durante la interacción del usuario al comenzar.
+        // ============================================================================
+        const JARVIS_DIALOGUES = Object.freeze({
+            welcome: {
+                text: 'Boss, sigue el enjambre de partículas. Te dirá adónde ir.',
+                url: './Jarvis_Boss_sigue_el_enjambre_de_particulas_te_dira_adonde_ir.mp3',
+                duration: 4.068
+            },
+            jetpack: {
+                text: 'Boss, con el Jetpack, ahora puedes volar con el gatillo secundario izquierdo.',
+                url: './Jarvis_Boss_con_el_jetpack_ahora_puedes_volar_con_el_gatillo_secundario_izquierdo.mp3',
+                duration: 5.642
+            }
+        });
+
+        const jarvisCanvas = document.createElement('canvas');
+        jarvisCanvas.width = 1200;
+        jarvisCanvas.height = 260;
+        const jarvisCtx = jarvisCanvas.getContext('2d');
+        const jarvisTex = new THREE.CanvasTexture(jarvisCanvas);
+        const jarvisMesh = new THREE.Mesh(
+            new THREE.PlaneGeometry(1.95, 0.42),
+            new THREE.MeshBasicMaterial({
+                map: jarvisTex, transparent: true, opacity: 0,
+                depthTest: false, depthWrite: false, fog: false
+            })
+        );
+        jarvisMesh.renderOrder = 1001;
+        jarvisMesh.position.set(0, -0.78, -1.23);
+        camera.add(jarvisMesh);
+        let jarvisOpeningStarted = false;
+        let jarvisActive = null;
+        const jarvisVoiceCache = {};
+        for (const [key, dialogue] of Object.entries(JARVIS_DIALOGUES)) {
+            const audio = new Audio(dialogue.url);
+            audio.preload = 'auto';
+            audio.volume = 0.97;
+            audio.load();
+            jarvisVoiceCache[key] = audio;
+        }
+
+        function jarvisRoundedRect(ctx, x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + w - r, y);
+            ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+            ctx.lineTo(x + w, y + h - r);
+            ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+            ctx.lineTo(x + r, y + h);
+            ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+            ctx.lineTo(x, y + r);
+            ctx.quadraticCurveTo(x, y, x + r, y);
+            ctx.closePath();
+        }
+
+        function drawJarvisDialogue(text, visibleChars = Infinity) {
+            jarvisCtx.clearRect(0, 0, 1200, 260);
+            if (!text) { jarvisTex.needsUpdate = true; return; }
+            jarvisCtx.fillStyle = 'rgba(0, 20, 10, 0.72)';
+            jarvisRoundedRect(jarvisCtx, 80, 32, 1040, 188, 24);
+            jarvisCtx.fill();
+            jarvisCtx.strokeStyle = 'rgba(0, 255, 170, 0.82)';
+            jarvisCtx.lineWidth = 5;
+            jarvisCtx.stroke();
+
+            const fullText = `Jarvis: "${text}"`;
+            const typed = fullText.slice(0, Math.max(0, Math.min(fullText.length, visibleChars)));
+            jarvisCtx.font = 'bold 35px Courier New, monospace';
+            jarvisCtx.textAlign = 'center';
+            jarvisCtx.textBaseline = 'middle';
+            jarvisCtx.fillStyle = 'rgba(234, 255, 255, 0.96)';
+            const words = typed.split(' ');
+            const lines = [];
+            let line = '';
+            for (const word of words) {
+                const candidate = line ? line + ' ' + word : word;
+                if (line && jarvisCtx.measureText(candidate).width > 965) {
+                    lines.push(line);
+                    line = word;
+                } else line = candidate;
+            }
+            if (line) lines.push(line);
+            const y0 = 126 - (lines.length - 1) * 23;
+            lines.forEach((item, i) => jarvisCtx.fillText(item, 600, y0 + i * 46));
+            jarvisTex.needsUpdate = true;
+        }
+
+        function stopJarvisDialogue() {
+            if (jarvisActive) {
+                jarvisActive.audio.pause();
+                jarvisActive.audio.onended = null;
+                jarvisActive.audio.onerror = null;
+                jarvisActive.audio.onplaying = null;
+                try { jarvisActive.audio.currentTime = 0; } catch (err) {}
+            }
+            jarvisActive = null;
+            jarvisMesh.material.opacity = 0;
+            drawJarvisDialogue('');
+        }
+
+        function speakJarvis(key) {
+            const dialogue = JARVIS_DIALOGUES[key];
+            if (!dialogue) return;
+            stopJarvisDialogue(); // La segunda indicación tiene prioridad al recoger el jetpack.
+            const audio = jarvisVoiceCache[key];
+            try { audio.currentTime = 0; } catch (err) {}
+            jarvisActive = {
+                text: dialogue.text,
+                audio,
+                startTime: clock.getElapsedTime(),
+                minDuration: Math.max(5.0, dialogue.duration + 1.2),
+                typeDuration: Math.max(2.3, dialogue.duration * 0.94),
+                lastChars: -1
+            };
+            drawJarvisDialogue(dialogue.text, 0);
+            audio.onplaying = () => {
+                if (jarvisActive && jarvisActive.audio === audio) {
+                    // La escritura empieza cuando realmente arranca el audio, si hubo buffering.
+                    jarvisActive.startTime = clock.getElapsedTime();
+                    jarvisActive.lastChars = -1;
+                }
+            };
+            const playPromise = audio.play();
+            if (playPromise && typeof playPromise.catch === 'function') {
+                playPromise.catch(() => { /* Subtítulo sigue visible si el navegador bloquea audio. */ });
+            }
+        }
+
+        function startJarvisWelcomeOnce() {
+            if (jarvisOpeningStarted || gameState.isGameOver) return;
+            jarvisOpeningStarted = true;
+            speakJarvis('welcome');
+        }
+
+        function updateJarvisDialogue() {
+            const item = jarvisActive;
+            if (!item) return;
+            const elapsed = Math.max(0, clock.getElapsedTime() - item.startTime);
+            const duration = item.minDuration;
+            if (elapsed >= duration) { stopJarvisDialogue(); return; }
+            const chars = Math.floor((elapsed / item.typeDuration) * (`Jarvis: "${item.text}"`).length);
+            if (chars !== item.lastChars) {
+                item.lastChars = chars;
+                drawJarvisDialogue(item.text, chars);
+            }
+            const inAlpha = THREE.MathUtils.clamp(elapsed / 0.40, 0, 1);
+            const outAlpha = THREE.MathUtils.clamp((duration - elapsed) / 0.45, 0, 1);
+            const alpha = Math.min(inAlpha, outAlpha);
+            jarvisMesh.material.opacity = alpha * 0.90;
+            const easeOut = 1 - Math.pow(1 - inAlpha, 3);
+            jarvisMesh.position.y = THREE.MathUtils.lerp(-0.78, -0.57, easeOut) - (1 - outAlpha) * 0.10;
+        }
 
         let gameOverMesh = null;
         let lastHudPlayerHp = -1;
@@ -915,7 +1087,9 @@
         // ============================================================================
         const BOOT_START_Y = -110.0;
         const BOOT_END_Y = 700.0; // Ilumina la nueva altura de ~562.5 m y deja margen de transición
-        const BOOT_DURATION = 15.0;
+        // Rugido antiguo (~1.15 s), seguido del nuevo encendido (~23.04 s).
+        // El robot empieza a caminar cuando ha concluido prácticamente toda la secuencia sonora.
+        const BOOT_DURATION = 25.0;
         const bootSweepUniform = { value: BOOT_START_Y };
 
         // Detalle PBR compartido: microarañazos, metal cepillado y rugosidad irregular.
@@ -1156,6 +1330,82 @@
             mesh.userData.basePos = mesh.position.clone();
             mesh.userData.explodeVec = directionVec.clone().normalize().multiplyScalar(distanceScale);
             explodableParts.push(mesh);
+        }
+
+        // Temblor mecánico original del visor Ultron Prestige MK-X, adaptado a escala 75x.
+        // El movimiento ocurre en el propio robot: en VR NO se altera la cámara del visor.
+        const FOOTSTEP_TREMOR = Object.freeze({
+            armorJolt: 0.025,              // amplitud local de vibración de placas
+            groundProximityWeight: 1.95,   // botas/piernas tiemblan más que la cabeza
+            armorFrequency: 38.0,
+            armorDecay: 0.048,             // factor de decaimiento por segundo
+            chassisDuration: 0.50,        // sacudida amortiguada del cuerpo (s)
+            chassisStrength: 1.0
+        });
+        const footstepTremor = { armorAmplitude: 0, phase: 0, chassisRemaining: 0, armorMoving: false };
+        const footstepChassisMotion = [0, 0, 0, 0]; // reutilizado: sin asignaciones por fotograma
+        const footstepWorldTmp = new THREE.Vector3();
+
+        function prepareFootstepArmorWeights() {
+            // El modelo ya está ensamblado. Se calcula solo una vez la cercanía al suelo.
+            colossalUltronAnchor.updateMatrixWorld(true);
+            explodableParts.forEach(part => {
+                part.getWorldPosition(footstepWorldTmp);
+                const relativeHeight = (footstepWorldTmp.y - colossalUltronAnchor.position.y) / COLOSSAL_SCALE;
+                const nearGround = 1.0 - THREE.MathUtils.clamp(relativeHeight / 7.5, 0, 1);
+                part.userData.footstepProximity = Math.pow(nearGround, 1.45);
+            });
+        }
+
+        function initiateFootstepTremor() {
+            footstepTremor.armorAmplitude = FOOTSTEP_TREMOR.armorJolt;
+            footstepTremor.phase = 0;
+            footstepTremor.chassisRemaining = FOOTSTEP_TREMOR.chassisDuration;
+        }
+
+        function updateFootstepArmorTremor(dt) {
+            if (footstepTremor.armorAmplitude > 0.0001) {
+                footstepTremor.phase += dt * FOOTSTEP_TREMOR.armorFrequency;
+                footstepTremor.armorAmplitude *= Math.pow(FOOTSTEP_TREMOR.armorDecay, dt);
+            } else {
+                footstepTremor.armorAmplitude = 0;
+            }
+            const moving = footstepTremor.armorAmplitude > 0;
+            if (!moving && !footstepTremor.armorMoving) return;
+            for (let i = 0; i < explodableParts.length; i++) {
+                const part = explodableParts[i];
+                const groundWeight = 0.40 + (part.userData.footstepProximity ?? 0.5) * FOOTSTEP_TREMOR.groundProximityWeight;
+                const jolt = footstepTremor.armorAmplitude * groundWeight;
+                const rattle = jolt * (0.55 + 0.45 * Math.sin(footstepTremor.phase + i * 1.9));
+                // Restaurar siempre la posición base: no hay deriva acumulativa entre pasos.
+                part.position.copy(part.userData.basePos).addScaledVector(part.userData.explodeVec, rattle);
+                part.position.y -= jolt * 0.30 * Math.abs(Math.cos(footstepTremor.phase * 0.65 + i));
+            }
+            footstepTremor.armorMoving = moving;
+        }
+
+        function getFootstepChassisMotion(dt) {
+            if (footstepTremor.chassisRemaining <= 0) {
+                footstepChassisMotion.fill(0);
+                return footstepChassisMotion;
+            }
+            footstepTremor.chassisRemaining = Math.max(0, footstepTremor.chassisRemaining - dt);
+            const progressRemaining = footstepTremor.chassisRemaining / FOOTSTEP_TREMOR.chassisDuration;
+            const envelope = Math.sin(progressRemaining * Math.PI) * FOOTSTEP_TREMOR.chassisStrength;
+            footstepChassisMotion[0] = -envelope * Math.abs(Math.sin(progressRemaining * Math.PI * 2.5)) * 0.011;
+            footstepChassisMotion[1] = envelope * Math.sin(progressRemaining * Math.PI * 4.0) * 0.0045;
+            footstepChassisMotion[2] = envelope * Math.sin(progressRemaining * Math.PI * 2.0) * 0.0055;
+            footstepChassisMotion[3] = envelope * Math.sin(progressRemaining * Math.PI * 3.0) * 0.0022;
+            return footstepChassisMotion;
+        }
+
+        function clearFootstepTremor() {
+            footstepTremor.armorAmplitude = 0;
+            footstepTremor.phase = 0;
+            footstepTremor.chassisRemaining = 0;
+            footstepTremor.armorMoving = false;
+            footstepChassisMotion.fill(0);
+            explodableParts.forEach(part => part.position.copy(part.userData.basePos));
         }
 
         const legJoints = {
@@ -2293,6 +2543,7 @@
             });
         }
         applyPoseImmediate();
+        prepareFootstepArmorWeights();
 
         // Inicializar la geometría fractal de los rayos de la mano derecha
         handFractalArcs.forEach(arc => rebuildHandFractalArc(arc));
@@ -2327,108 +2578,26 @@
         stormFlashLight.visible = false;
         scene.add(stormFlashLight);
 
-        // Suelo con microporos y charcos en mapas tileables (sin SSR ni passes de sombras).
-        function buildWetFloorMaps() {
-            const side = 256;
-            const roughCanvas = document.createElement('canvas');
-            const normalCanvas = document.createElement('canvas');
-            roughCanvas.width = normalCanvas.width = side;
-            roughCanvas.height = normalCanvas.height = side;
-            const rc = roughCanvas.getContext('2d'), nc = normalCanvas.getContext('2d');
-            const rd = rc.createImageData(side, side), nd = nc.createImageData(side, side);
-            const heights = new Float32Array(side * side);
-            const hash = (x, y) => {
-                const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
-                return n - Math.floor(n);
-            };
-            for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
-                const i = (y * side + x) * 4;
-                const small = hash(x, y);
-                const waves = Math.sin(x * 0.045 + Math.sin(y * 0.031) * 2.1)
-                    * Math.cos(y * 0.039 - Math.sin(x * 0.034));
-                const pooled = THREE.MathUtils.smoothstep(waves + (small - 0.5) * 0.18, 0.07, 0.43);
-                const rough = Math.round(205 - pooled * 128 + small * 22);
-                rd.data[i] = rd.data[i+1] = rd.data[i+2] = rough;
-                rd.data[i+3] = 255;
-                heights[y * side + x] = (small - 0.5) * 0.2 + (1 - pooled) * 0.09;
-            }
-            for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
-                const i = (y * side + x) * 4;
-                const dx = heights[y*side + (x+1)%side] - heights[y*side+(x+side-1)%side];
-                const dy = heights[((y+1)%side)*side + x] - heights[((y+side-1)%side)*side+x];
-                const nx = -dx*0.45, ny = -dy*0.45, inv=1/Math.hypot(nx,ny,1);
-                nd.data[i] = Math.round((nx*inv*0.5+0.5)*255);
-                nd.data[i+1] = Math.round((ny*inv*0.5+0.5)*255);
-                nd.data[i+2] = Math.round(inv*255);
-                nd.data[i+3] = 255;
-            }
-            rc.putImageData(rd,0,0);nc.putImageData(nd,0,0);
-            const texture = canvas => {
-                const t = new THREE.CanvasTexture(canvas);
-                t.wrapS = t.wrapT = THREE.RepeatWrapping;
-                t.repeat.set(180,180);
-                t.anisotropy = Math.min(2, renderer.capabilities.getMaxAnisotropy());
-                return t;
-            };
-            return { rough: texture(roughCanvas), normal: texture(normalCanvas) };
-        }
-        const wetFloorMaps = buildWetFloorMaps();
+        // Suelo totalmente negro y liso, SIN mapas de textura, relieve, rugosidad,
+        // reflejos, iluminación ni niebla. Los círculos de lluvia son geometría separada.
         const wetFloor = new THREE.Mesh(
             new THREE.PlaneGeometry(6000, 6000),
-            new THREE.MeshStandardMaterial({
-                color: 0x020203, // Negro: los círculos de la lluvia aportan el detalle visible
-                metalness: 0.10,
-                roughness: 0.69,
-                roughnessMap: wetFloorMaps.rough,
-                normalMap: wetFloorMaps.normal,
-                normalScale: new THREE.Vector2(0.32,0.32),
-                envMapIntensity: 0.0
+            new THREE.MeshBasicMaterial({
+                color: 0x000000,
+                fog: false,
+                toneMapped: false,
+                depthWrite: true,
+                side: THREE.DoubleSide
             })
         );
         wetFloor.rotation.x = -Math.PI / 2;
-        wetFloor.position.y = 0.0;
+        wetFloor.position.y = 0;
         scene.add(wetFloor);
 
-        // Sombras elípticas de contacto: dos planos suaves en vez de shadow maps.
-        // Evita una pasada adicional de renderizado para el coloso de 562.5 m.
-        function makeContactShadowTexture() {
-            const canvas=document.createElement('canvas');
-            canvas.width=canvas.height=128;
-            const ctx=canvas.getContext('2d');
-            const grad=ctx.createRadialGradient(64,64,3,64,64,62);
-            grad.addColorStop(0,'rgba(0,0,0,0.82)');
-            grad.addColorStop(0.5,'rgba(0,0,0,0.43)');
-            grad.addColorStop(1,'rgba(0,0,0,0)');
-            ctx.fillStyle=grad;ctx.fillRect(0,0,128,128);
-            return new THREE.CanvasTexture(canvas);
-        }
-        const contactShadowTexture=makeContactShadowTexture();
-        const contactShadowMaterial=new THREE.MeshBasicMaterial({
-            map:contactShadowTexture,transparent:true,depthWrite:false,
-            opacity:0.62,polygonOffset:true,polygonOffsetFactor:-1
-        });
-        const contactShadowGeometry=new THREE.PlaneGeometry(99,114);
-        contactShadowGeometry.rotateX(-Math.PI/2);
-        const contactShadows=[-1,1].map(side=>{
-            const mesh=new THREE.Mesh(contactShadowGeometry,contactShadowMaterial);
-            mesh.position.y=0.065;
-            mesh.visible=false;
-            scene.add(mesh);
-            return {mesh,side};
-        });
-        function updateContactShadows() {
-            const active=gameState.ultronAwakening && gameState.boss.defeatState==='NONE';
-            const b=gameState.boss;
-            for (const c of contactShadows) {
-                c.mesh.visible=active;
-                if (!active) continue;
-                const lateral=c.side*(38 * COLOSSAL_SCALE / 50.0);
-                const yaw=b.facingYaw;
-                c.mesh.position.set(b.pos.x+Math.cos(yaw)*lateral,0.065,
-                    b.pos.z-Math.sin(yaw)*lateral);
-                c.mesh.rotation.y=-yaw;
-            }
-        }
+        // Con fondo perfectamente negro las sombras de contacto son invisibles;
+        // se omiten por completo para ahorrar draw calls en ambos visores.
+        const contactShadows = [];
+        function updateContactShadows() {}
 
         // Nubes por instancias: tres materiales y tres draw calls (no 48 mallas).
         const sharedCloudPlaneGeo = new THREE.PlaneGeometry(1, 1);
@@ -2779,35 +2948,64 @@
             sound.playThunder(0.75 + Math.random() * 0.45);
         }
 
-        // Ondas de choque al pisar el suelo mojado
+        // Pisadas titánicas: onda anaranjada + segundo anillo de agua sobre el suelo NEGRO.
+        // Se reutilizan las geometrías; no se crean mallas ni materiales en cada paso.
         const stompShockwaves = [];
+        const stompArcGeometry = new THREE.RingGeometry(12.0, 21.0, 48);
+        const stompWaterGeometry = new THREE.RingGeometry(9.0, 15.0, 40);
+        stompArcGeometry.rotateX(-Math.PI / 2);
+        stompWaterGeometry.rotateX(-Math.PI / 2);
         for (let i = 0; i < 2; i++) {
-            const swGeo = new THREE.RingGeometry(12.0, 21.0, 48);
-            swGeo.rotateX(-Math.PI / 2);
-            const swMat = new THREE.MeshBasicMaterial({
-                color: 0xff5500,
-                transparent: true,
-                opacity: 0.0,
-                side: THREE.DoubleSide,
-                depthWrite: false
-            });
-            const swMesh = new THREE.Mesh(swGeo, swMat);
-            swMesh.position.y = 0.25;
-            scene.add(swMesh);
-            stompShockwaves.push({ mesh: swMesh, active: false, age: 0 });
+            const arcMat = new THREE.MeshBasicMaterial({color: 0xb34310, transparent: true, opacity: 0,
+                side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1});
+            const waterMat = new THREE.MeshBasicMaterial({color: 0x577a91, transparent: true, opacity: 0,
+                side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1});
+            const arc = new THREE.Mesh(stompArcGeometry, arcMat);
+            const water = new THREE.Mesh(stompWaterGeometry, waterMat);
+            arc.position.y = 0.26;
+            water.position.y = 0.29;
+            arc.visible = false;
+            water.visible = false;
+            scene.add(arc, water);
+            stompShockwaves.push({mesh: arc, waterMesh: water, active: false, age: 0});
         }
 
         function triggerFootStomp(worldX, worldZ, idx) {
             const sw = stompShockwaves[idx];
             if (!sw) return;
+            initiateFootstepTremor(); // placas, chasis y estructura, sincronizados con el impacto
             sw.active = true;
             sw.age = 0;
-            sw.mesh.position.set(worldX, 0.25, worldZ);
+            sw.mesh.position.set(worldX, 0.26, worldZ);
             sw.mesh.scale.setScalar(1);
-            sw.mesh.material.opacity = 0.85;
-            sound.playColossalFootstep();
+            sw.mesh.material.opacity = 0.80;
+            sw.mesh.visible = true;
+            sw.waterMesh.position.set(worldX, 0.29, worldZ);
+            sw.waterMesh.scale.setScalar(0.8);
+            sw.waterMesh.material.opacity = 0.55;
+            sw.waterMesh.visible = true;
+            sound.playColossalFootstep(); // incluye RobotStep.mp3
+            // Desktop: pequeña vibración sísmica de cámara ya implementada.
+            // WebXR: vibración háptica del control SIN trasladar artificialmente la cabeza.
             gameState.cameraShake = Math.min(1.4, gameState.cameraShake + 0.55);
             triggerControllerHaptics('both', 0.8, 160);
+        }
+
+        function updateStompShockwaves(dt) {
+            // Actualizar incluso durante la cinemática de caída del coloso.
+            stompShockwaves.forEach(sw => {
+                if (!sw.active) return;
+                sw.age += dt * 1.4;
+                sw.mesh.scale.setScalar(1.0 + sw.age * 5.2);
+                sw.mesh.material.opacity = Math.max(0, 0.80 * (1.0 - sw.age));
+                sw.waterMesh.scale.setScalar(0.8 + sw.age * 6.8);
+                sw.waterMesh.material.opacity = Math.max(0, 0.55 * (1.0 - sw.age * 0.95));
+                if (sw.age >= 1.1) {
+                    sw.active = false;
+                    sw.mesh.visible = false;
+                    sw.waterMesh.visible = false;
+                }
+            });
         }
 
         // ============================================================================
@@ -2851,9 +3049,90 @@
         jpPointLight.position.set(0, 0.4, 0);
         jetpackPickupGroup.add(jpPointLight);
 
+
+        // Enjambre guía del Jetpack: 96 sprites puntuales en un único draw call.
+        // Un shader mueve las partículas desde el jugador hacia el jetpack, incluso si se desplaza.
+        const GUIDE_PARTICLE_COUNT = 96;
+        const guideGeometry = new THREE.BufferGeometry();
+        const guideVertices = new Float32Array(GUIDE_PARTICLE_COUNT * 3);
+        const guidePhases = new Float32Array(GUIDE_PARTICLE_COUNT);
+        const guideOffsets = new Float32Array(GUIDE_PARTICLE_COUNT);
+        const guideSizes = new Float32Array(GUIDE_PARTICLE_COUNT);
+        for (let i = 0; i < GUIDE_PARTICLE_COUNT; i++) {
+            guidePhases[i] = (i + Math.random() * 0.35) / GUIDE_PARTICLE_COUNT;
+            guideOffsets[i] = Math.random() * Math.PI * 2;
+            guideSizes[i] = 0.75 + Math.random() * 0.65;
+        }
+        guideGeometry.setAttribute('position', new THREE.BufferAttribute(guideVertices, 3));
+        guideGeometry.setAttribute('aPhase', new THREE.BufferAttribute(guidePhases, 1));
+        guideGeometry.setAttribute('aOffset', new THREE.BufferAttribute(guideOffsets, 1));
+        guideGeometry.setAttribute('aSize', new THREE.BufferAttribute(guideSizes, 1));
+        const guideUniforms = {
+            uTime: { value: 0 },
+            uStart: { value: new THREE.Vector3(0, 1.4, 44) },
+            uGoal: { value: new THREE.Vector3(0, 1.8, 24) }
+        };
+        const guideMaterial = new THREE.ShaderMaterial({
+            uniforms: guideUniforms,
+            vertexShader: `
+                attribute float aPhase;
+                attribute float aOffset;
+                attribute float aSize;
+                uniform float uTime;
+                uniform vec3 uStart;
+                uniform vec3 uGoal;
+                varying float vFade;
+                varying vec3 vColor;
+                void main() {
+                    float t = fract(aPhase + uTime * 0.18);
+                    float bow = sin(t * 3.14159265);
+                    vec3 p = mix(uStart, uGoal, t);
+                    p.x += (sin(t * 12.0 + aOffset + uTime * 2.0) * 0.42) * bow;
+                    p.y += (0.14 + sin(t * 14.0 + aOffset + uTime * 1.7) * 0.28) * bow;
+                    p.z += (cos(t * 9.0 + aOffset) * 0.28) * bow;
+                    vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
+                    gl_Position = projectionMatrix * mvPosition;
+                    gl_PointSize = clamp(105.0 / max(1.0, -mvPosition.z), 3.0, 16.0) * aSize;
+                    vColor = mix(vec3(0.05, 0.95, 1.0), vec3(1.0, 0.78, 0.20), t * 0.75);
+                    vFade = smoothstep(0.0, 0.08, t) * (1.0 - smoothstep(0.86, 1.0, t));
+                }
+            `,
+            fragmentShader: `
+                varying float vFade;
+                varying vec3 vColor;
+                void main() {
+                    vec2 uv = gl_PointCoord - vec2(0.5);
+                    float radius = length(uv) * 2.0;
+                    float core = 1.0 - smoothstep(0.05, 0.30, radius);
+                    float halo = exp(-7.0 * radius * radius) * 0.54;
+                    float alpha = (core + halo) * vFade;
+                    if (alpha < 0.02) discard;
+                    gl_FragColor = vec4(vColor, min(alpha, 1.0));
+                }
+            `,
+            transparent: true,
+            depthWrite: false,
+            depthTest: false,
+            blending: THREE.AdditiveBlending
+        });
+        const jetpackGuideParticles = new THREE.Points(guideGeometry, guideMaterial);
+        jetpackGuideParticles.frustumCulled = false; // vértices nacen en GPU, no en position CPU.
+        jetpackGuideParticles.renderOrder = 50;
+        scene.add(jetpackGuideParticles);
+        function updateJetpackGuide(elapsedTime) {
+            jetpackGuideParticles.visible = gameState.isRunning && !gameState.isGameOver && !gameState.hasJetpack;
+            if (!jetpackGuideParticles.visible) return;
+            guideUniforms.uTime.value = elapsedTime;
+            guideUniforms.uStart.value.set(playerDolly.position.x, playerDolly.position.y + 1.25, playerDolly.position.z);
+            guideUniforms.uGoal.value.copy(jetpackPickupGroup.position);
+            guideUniforms.uGoal.value.y += 0.28;
+        }
+
         function equipJetpack() {
             if (gameState.hasJetpack) return;
             gameState.hasJetpack = true;
+            jetpackGuideParticles.visible = false;
+            speakJarvis('jetpack'); // Caja + audio de Jarvis al recoger el jetpack.
             gameState.ultronAwakening = true;
             gameState.sequenceTime = 0;
             jetpackPickupGroup.visible = false;
@@ -2861,8 +3140,8 @@
             colossalUltronAnchor.visible = true;
 
             sound.playJetpackEquip();
-            sound.playMechaStartingUp(); // Encendido al comenzar la secuencia del gigante
-            sound.playUltronVoiceChord();
+            sound.playUltronVoiceChord(); // Rugido grave sintetizado original al despertarse
+            sound.playMechaAwakeningSequence(); // Primero el audio anterior, después robot_encendido.mp3
             startSoundtrackBGM();
             triggerControllerHaptics('both', 0.9, 250);
 
@@ -3579,7 +3858,6 @@
                     vs.sprite.visible = vs.mat.opacity > 0.01;
                 });
 
-                wetFloor.material.envMapIntensity = 0.08 * easedBoot;
 
                 updateCloudLayers(elapsedTime, easedBoot, activeLightningFlash);
 
@@ -3598,10 +3876,9 @@
                 bootSweepUniform.value = BOOT_END_Y + 50.0;
                 bootScannerLight.intensity = 0.0;
                 bootScannerLight.visible = false;
-                wetFloor.material.envMapIntensity = 0.09;
                 const bossBarWrap = document.getElementById('boss-bar-wrapper');
                 if (bossBarWrap) bossBarWrap.style.opacity = '1';
-                sound.playUltronVoiceChord();
+                // El roar ya sonó al despertar; no repetirlo al empezar a caminar.
             }
 
             updateCloudLayers(elapsedTime, 1.0, activeLightningFlash);
@@ -3732,7 +4009,11 @@
             // CAMINATA COLOSAL HACIA EL JUGADOR + GIRO SUAVE
             gameState.walkTime += dt;
             const stepped = getSteppedGaitPhase(gameState.walkTime);
-            const { leftGait, rightGait } = applyWalkGaitFrame(stepped.gaitPhase, stepped.isPaused);
+            const [stompBobY, stompJitterX, stompShiftZ, stompRollZ] = getFootstepChassisMotion(dt);
+            const { leftGait, rightGait } = applyWalkGaitFrame(
+                stepped.gaitPhase, stepped.isPaused, stepped.pauseElapsed,
+                stompBobY, stompJitterX, stompShiftZ, stompRollZ
+            );
 
             const playerPos = getPlayerWorldPos();
             const toPlayerX = playerPos.x - b.pos.x;
@@ -3748,11 +4029,19 @@
                 colossalUltronAnchor.position.set(b.pos.x, 0, b.pos.z);
             }
 
+            // Transformación local -> mundo usando el giro real del coloso.
+            // Así los círculos aparecen debajo de cada bota aunque el jefe haya girado.
             if (leftGait && leftGait.isImpactFrame && !prevLeftFootDown) {
-                triggerFootStomp(b.pos.x + 37.5, b.pos.z + leftGait.footForwardZ * COLOSSAL_SCALE, 0);
+                const lateral = 0.50 * COLOSSAL_SCALE;
+                const forward = leftGait.footForwardZ * COLOSSAL_SCALE;
+                triggerFootStomp(b.pos.x + lateral * Math.cos(b.facingYaw) + forward * Math.sin(b.facingYaw),
+                    b.pos.z - lateral * Math.sin(b.facingYaw) + forward * Math.cos(b.facingYaw), 0);
             }
             if (rightGait && rightGait.isImpactFrame && !prevRightFootDown) {
-                triggerFootStomp(b.pos.x - 37.5, b.pos.z + rightGait.footForwardZ * COLOSSAL_SCALE, 1);
+                const lateral = -0.50 * COLOSSAL_SCALE;
+                const forward = rightGait.footForwardZ * COLOSSAL_SCALE;
+                triggerFootStomp(b.pos.x + lateral * Math.cos(b.facingYaw) + forward * Math.sin(b.facingYaw),
+                    b.pos.z - lateral * Math.sin(b.facingYaw) + forward * Math.cos(b.facingYaw), 1);
             }
             prevLeftFootDown = leftGait ? leftGait.isImpactFrame : false;
             prevRightFootDown = rightGait ? rightGait.isImpactFrame : false;
@@ -3778,7 +4067,7 @@
                 if (b.handAttackTimer <= 0) {
                     b.handAttackState = 'CHARGING';
                     b.handAttackTimer = 2.4;
-                    sound.playBossHandCharge();
+                    // La carga conserva su animación visual; power-beam suena sólo al disparar.
                 }
             } else if (b.handAttackState === 'CHARGING') {
                 const chargeRatio = THREE.MathUtils.clamp(1.0 - (b.handAttackTimer / 2.4), 0.05, 1.0);
@@ -3799,14 +4088,7 @@
             chestReactorLight.position.set(b.pos.x, 390, b.pos.z + 52);
             handPlasmaLight.position.set(b.pos.x - 67.5, 330, b.pos.z + 67.5);
 
-            stompShockwaves.forEach(sw => {
-                if (sw.active) {
-                    sw.age += dt * 1.4;
-                    sw.mesh.scale.setScalar(1.0 + sw.age * 7.5);
-                    sw.mesh.material.opacity = Math.max(0, 0.85 * (1.0 - sw.age));
-                    if (sw.age >= 1.0) sw.active = false;
-                }
-            });
+
         }
 
         // Barrera eléctrica de proximidad alrededor de Ultron, escalada a sus 562.5 m.
@@ -4084,6 +4366,7 @@
         // 16. EVENTOS DE TECLADO, RATÓN Y BOTÓN DE INICIO
         // ============================================================================
         function endExperience(playerWon) {
+            stopAwakeningSoundSequence();
             gameState.isGameOver = true;
             if (gameOverMesh) {
                 camera.remove(gameOverMesh);
@@ -4125,6 +4408,10 @@
         }
 
         function resetExperience() {
+            stopAwakeningSoundSequence();
+            stopJarvisDialogue();
+            jarvisOpeningStarted = false;
+            jetpackGuideParticles.visible = true;
             if (gameOverMesh) {
                 camera.remove(gameOverMesh);
                 gameOverMesh.material.map.dispose();
@@ -4162,7 +4449,6 @@
             jetpackPickupGroup.visible = true;
             jpPointLight.visible = true;
             lightningGroup.visible = true;
-            wetFloor.material.envMapIntensity = 0.0;
             rainSplashes.visible = true;
             // Limpiar exclusivamente VFX de la partida anterior.
             persistentSmokePlumes.length = 0;
@@ -4175,6 +4461,13 @@
             activeCloudLightnings.length = 0;
             nextLightningTimer = 0.8;
             prevLeftFootDown = prevRightFootDown = false;
+            clearFootstepTremor();
+            stompShockwaves.forEach(sw => {
+                sw.active = false;
+                sw.age = 0;
+                sw.mesh.visible = false;
+                sw.waterMesh.visible = false;
+            });
             contactShadows.forEach(c=>c.mesh.visible=false);
 
             materials.emissiveCore.emissiveIntensity = 2.2;
@@ -4204,6 +4497,7 @@
             });
 
             applyPoseImmediate();
+            startJarvisWelcomeOnce();
         }
 
         window.addEventListener('keydown', (e) => {
@@ -4254,6 +4548,7 @@
             document.body.classList.add('game-active');
             sound.init();
             gameState.isRunning = true;
+            startJarvisWelcomeOnce();
             if (vrButton && !renderer.xr.isPresenting) {
                 vrButton.click();
             }
@@ -4292,12 +4587,16 @@
             const elapsedTime = clock.getElapsedTime();
 
             if (gameState.isRunning) {
+                updateFootstepArmorTremor(dt);
                 updatePlayerAndJetpack(dt, elapsedTime);
+                updateJetpackGuide(elapsedTime);
+                updateJarvisDialogue();
 
                 if (rightController && rightController.userData.isSelecting) fireWeapon(rightController, rightWeaponMesh);
                 if (leftController && leftController.userData.isSelecting) fireWeapon(leftController, leftWeaponMesh);
 
                 updateColossalUltronAndStorm(dt, elapsedTime);
+                updateStompShockwaves(dt);
                 updateUltronProximityShock(elapsedTime);
                 updateCombatAndParticles(dt, elapsedTime);
                 updateAllHUDs();
