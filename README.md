@@ -1,78 +1,62 @@
-# ULTRON: COLOSSAL AWAKENING VR — Jarvis, enjambre guía y audio personalizado
+# ULTRON: COLOSSAL AWAKENING VR — Jarvis y contraseña del jetpack
 
-Proyecto **HTML + Three.js r160 + WebXR**, listo para publicar como **sitio estático en GitHub y Render**. Conserva jetpack, controles VR/PC, cuatro armas y turbinas ARC, cinemáticas, impactos y música original.
+Proyecto HTML / Three.js / WebXR para Meta Quest 3, Meta Quest Pro y navegador de escritorio. Continúa la edición anterior con Ultron de 562,5 m, suelo completamente negro, ondas circulares de lluvia, rayos de tormenta anteriores al encendido, pisadas con temblor, descarga de proximidad, armas ARC y efectos gráficos optimizados.
 
-## Novedad: los dos diálogos de Jarvis y el enjambre guía
+## Misiones y voces de Jarvis
 
-El diseño de los diálogos procede del sistema de notificaciones flotantes de `index (5).html`, adaptado al entorno WebXR. Los cuadros aparecen dentro de la vista VR y también en escritorio, con fondo oscuro, contorno cian, animación de entrada/salida y escritura progresiva. El nombre **TecGPT** se sustituyó por **Jarvis**.
+Los diálogos aparecen como cuadros flotantes con texto progresivo y reproducen los audios MP3 incluidos en la carpeta `public`. Las intervenciones de combate son de **una sola reproducción por partida** y se administran en cola para no superponer las voces. Los avisos de contraseña, derrota y victoria tienen prioridad.
 
-- **Al iniciar la experiencia** (botón INICIAR / entrada en VR): Jarvis reproduce el MP3 suministrado y muestra: **Jarvis: «Boss, sigue el enjambre de partículas. Te dirá adónde ir.»**
-- **Guía dinámica**: 96 partículas brillantes de color cian/ámbar fluyen desde la posición actual del jugador hacia el jetpack. Se renderizan en un solo `THREE.Points` con ShaderMaterial, sin una actualización individual de partículas por CPU, y desaparecen al recogerlo. Al reiniciar, reaparecen.
-- **Al recoger el jetpack**: el segundo MP3 reproduce **Jarvis: «Boss, con el Jetpack, ahora puedes volar con el gatillo secundario izquierdo.»**; sustituye inmediatamente la indicación anterior si aún está en pantalla.
-- Se convirtieron ambos audios `.m4a` originales a `.mp3` para mejorar su compatibilidad con el navegador integrado de los visores, y se incluyeron en `public/` con nombres legibles, sin el sufijo `(1)`.
-- Como los navegadores VR pueden bloquear el audio automático, el primer diálogo se inicia al pulsar **INICIAR EXPERIENCIA / ENTER VR** o al entrar en una sesión WebXR (solo una vez). Los subtítulos se muestran aunque el audio no pueda reproducirse.
-- La segunda indicación comienza inmediatamente tras recoger el jetpack, pero el resto de sonidos existentes (StartingUp, robot_encendido, RobotStep, disparos y ambiente) se conserva.
+| Momento | Texto de Jarvis |
+|---|---|
+| Al entrar al juego | «Boss, sigue el enjambre de partículas. Te dirá adónde ir.» |
+| Al llegar al jetpack | «Coloca el password que descubrimos en el taller tres de Desarrollo Móvil.» |
+| Tras introducir la contraseña válida | «Boss, con el jetpack ahora puedes volar con el gatillo secundario izquierdo.» |
+| Al volar cerca de las turbinas | «Mira el color de las turbinas. Aprovecha las debilidades que aprendimos en el taller uno de Ciberseguridad.» |
+| Al apuntar y disparar hacia una turbina o impactarla | «No olvides que puedes cambiar de arma con el joystick derecho.» |
+| Tras avanzar el jefe durante la batalla | «¡Ya casi llega a Hermosillo! ¡Tienes que detenerlo!» |
+| Al perder toda la vida | «¡Boss, estás ahí! ¡Responde, responde, Boss!» |
+| Al derrotar a Ultron | «¡Boss, lo conseguiste! ¡Eres una leyenda!» |
 
-## Novedad: sonidos de disparo reemplazados
+## Jetpack: clave 1122
 
-- **Disparos del protagonista:** exclusivamente `public/shot_comprimido.mp3`, suministrado por el usuario. Se eliminó el antiguo MP3 remoto de disparo y el oscilador Web Audio que se sumaba al sonido.
-- **Disparos de Ultron:** exclusivamente `public/power-beam-sound-effect.mp3`, suministrado por el usuario. Se reproduce cuando el jefe **lanza el proyectil**, no durante su carga; se retiró el sonido anterior `ice-beam` y la reproducción prematura del `power-beam` durante la carga.
-- El método auxiliar de cañón también usa el mismo MP3 de Ultron, sin ondas sintéticas añadidas.
-- Un grupo reutilizable de hasta 8 voces para el protagonista y 2 para Ultron evita crear indefinidamente reproductores HTMLAudio cuando se dispara repetidamente.
-- Se **conservan** música, ambiente de lluvia, rugido y encendido, sonido de pisadas, impactos y demás efectos no relacionados con el disparo.
+Al alcanzar el jetpack aparece un **teclado numérico virtual en VR**. Apunta a los números con cualquiera de los mandos, pulsa el gatillo para seleccionar `1`, `1`, `2`, `2` y después `OK`. Hay botones `BORRAR` y una señal luminosa que muestra hacia dónde apuntas. Hasta introducir la clave correcta no se puede equipar ni iniciar el despertar de Ultron.
 
-## Novedad: temblor de cada pisada recuperado del visor 3D original
+En escritorio aparece un formulario donde se escribe `1122` y se pulsa **DESBLOQUEAR JETPACK** o Enter. El sonido de vuelo de Jarvis se reproduce **después** de desbloquearlo. Con una clave incorrecta puede volver a intentarse sin perder progreso.
 
-- **Sacudida mecánica de armadura (`armorJolt`)**: cuando la bota toca el suelo, las piezas del Ultron vibran con una oscilación de 38 rad/s y decaimiento amortiguado. Las piezas más cercanas al suelo reciben un multiplicador de 1,95; las altas vibran menos. Se respetan las posiciones originales de cada pieza para evitar acumulación de errores.
-- **Sacudida global del chasis**: durante 0,50 segundos la estructura tiene un ligero hundimiento vertical, desplazamiento lateral y balanceo; la interpolación reutiliza los parámetros de la animación de marcha existente, sin modificar controles ni colisiones.
-- **Doble onda expansiva**: al impacto aparece un anillo mecánico cálido y un segundo anillo tenue de agua que se expande sobre el **suelo negro**. Son reutilizables y se desactivan automáticamente, también durante el colapso final.
-- **Sin movimiento artificial de cabeza en WebXR**: al pisar se conserva la háptica en mandos y el sonido `RobotStep.mp3`; la cámara de escritorio mantiene su vibración suave. En Quest se evita forzar desplazamientos de cámara que puedan marear.
-- **Ubicación física**: las ondas se colocan según la orientación actual del gigante, de modo que no queden desplazadas si gira hacia el jugador.
-- Configuración interna: el objeto `FOOTSTEP_TREMOR` en `public/index.html` permite ajustar amplitud, cercanía al suelo, frecuencia y duración. Los valores iniciales proceden de `visor_3d_interactivo_ultron_prestige-2(2).html`.
+## Escena inicial ampliada
 
-## Cambios de la edición anterior que se conservan
+El jugador comienza ahora a unos **186 metros del jetpack**, en lugar de unos 20 metros. La velocidad de caminar durante la fase anterior al jetpack se ha ajustado a **13,5 m/s**, por lo que el desplazamiento frontal directo dura aproximadamente **14 segundos**. Se conservan los controles y la velocidad de vuelo de la versión anterior.
 
-- **Ultron 50 % más grande:** escala 75.0 en vez de 50.0, altura teórica de **562,5 m** en vez de ~375 m. Adaptados el encendido vertical, luces, sombras de contacto, pisadas y techo de vuelo (650 m).
-- **Suelo negro absoluto:** material sin texturas (`#000000`), sin mapas de relieve ni rugosidad, sin reflejos, sombras proyectadas o efecto de niebla sobre su superficie. Los círculos de lluvia siguen visibles porque son un efecto independiente.
-- **Gotas convertidas en círculos expansivos:** 260 anillos de lluvia en Quest 3, 150 en Quest Pro; nacen y se expanden sobre el suelo **mediante un único lote de geometría instanciada y shader GPU**. Comienzan desde el inicio de la partida y siguen al jugador.
-- **Descarga de proximidad:** si se entra en el campo eléctrico del robot mientras está activo, se reciben **20 puntos de daño** y un **empuje horizontal** (con ligero impulso vertical). Intervalo mínimo de 2,3 segundos entre descargas; aparecen chispas y alerta de HUD. No se aplica después de derrotar al robot.
-- **Relámpagos previos a la activación:** la tormenta y sus rayos nube-tierra aparecen antes de recoger el jetpack y siguen durante el combate. Se mantienen rayos fractales agrupados en instancias.
-- **Niebla azul y armadura oscurecidas:** menor intensidad azul en atmósfera, luces de contorno y nubes; armaduras metálicas más oscuras sin alterar los colores identificativos de las turbinas ARC.
-- **Nueva secuencia de despertar:** al recoger el jetpack se escucha primero el antiguo `public/StartingUp.mp3` (más el rugido grave original sintetizado); **cuando termina** comienza el nuevo `public/robot_encendido.mp3` (23,04 s). La iluminación progresiva dura 25 segundos para sincronizarse con ambos sonidos antes de caminar. `public/RobotStep.mp3` sigue sonando en cada pisada. Todos los sonidos están incluidos localmente, sin depender de URL externa.
-- Mantiene las optimizaciones anteriores de PBR, `InstancedMesh` para nubes y rayos, piscina de humo, perfiles de Quest y correcciones del shader.
+El enjambre contiene ahora **160 partículas**, se anima en GPU en una única llamada de dibujo y se adapta constantemente a la posición del jugador. Desaparece después del desbloqueo y reaparece al reiniciar.
 
-## Estructura del repositorio
+## Despliegue GitHub / Render
 
-```text
-ultron_colossal_visual_optimized/
-├── public/
-│   ├── index.html
-│   ├── StartingUp.mp3
-│   ├── robot_encendido.mp3
-│   ├── RobotStep.mp3
-│   ├── shot_comprimido.mp3
-│   ├── power-beam-sound-effect.mp3
-│   ├── Jarvis_Boss_sigue_el_enjambre_de_particulas_te_dira_adonde_ir.mp3
-│   └── Jarvis_Boss_con_el_jetpack_ahora_puedes_volar_con_el_gatillo_secundario_izquierdo.mp3
-├── render.yaml
-├── README.md
-└── .gitignore
-```
+1. Extrae el ZIP y sube **el contenido** del directorio del proyecto a la raíz del repositorio; verifica que exista `public/index.html`.
+2. En Render usa **Static Site**, `Publish Directory: public` y `Build Command: echo "Sitio HTML estatico: no requiere compilacion"`. También puede utilizarse `render.yaml`.
+3. Sube **todos los 14 MP3 de `public/`** junto con `index.html` (8 diálogos Jarvis más 6 efectos grabados: disparos del jugador, disparos de Ultron, rugido, encendido, pisadas y jetpack).
+4. En Quest abre la URL HTTPS desde el navegador WebXR y selecciona la calidad correspondiente al visor.
 
-**Es importante subir los SIETE MP3 dentro de `public/` junto con `index.html`.** Si solo se sustituye el HTML, faltarán efectos de disparo, encendido y pisadas.
+La música de fondo permanece en su URL externa original. Three.js y los demás recursos CDN aún requieren conexión a Internet.
 
-## Subir a GitHub y Render
+## Verificación y límites
 
-1. Descomprime el ZIP y sube a la raíz del repositorio **el contenido de la carpeta descomprimida** (no el ZIP ni una carpeta extra alrededor del proyecto).
-2. En Render selecciona **New → Static Site** con **Build Command:** `echo "Sitio HTML estatico: no requiere compilacion"` y **Publish Directory:** `public`; también puedes utilizar el `render.yaml` incluido.
-3. Desde el navegador de Quest abre la dirección HTTPS que ofrece Render e inicia la experiencia.
-4. Selecciona en el menú **Quest 3 — detalle alto** o **Quest Pro — equilibrado**. El modo automático es orientativo; puedes elegir manualmente.
+Se validaron la sintaxis JavaScript, las rutas de los 13 audios, su decodificación con `ffprobe`, el flujo de contraseña y la estructura del paquete. **No se ha probado físicamente en Meta Quest 3 o Quest Pro**, así que la interacción con los mandos, la visibilidad del teclado y el rendimiento deberán confirmarse en el visor.
 
-Solo la música de fondo continúa usando su URL externa original. **Los siete MP3 de disparos, despertar, pisadas y Jarvis se incluyen localmente.**
+## Actualización: jetpack grabado y huella exacta
 
-## Comprobaciones y límites
-
-- Sintaxis JavaScript de módulo validada con Node.js; integridad del ZIP y presencia de los audios comprobadas. No se ha probado el resultado visual ni la tasa de fotogramas en los visores físicos.
-- Los efectos de círculos, nubes y relámpagos se han programado para ejecutarse principalmente en GPU. En visores VR **los FPS y la compatibilidad visual deben comprobarse físicamente**, especialmente el renderizado WebXR y los materiales.
-- Para investigar la tasa de FPS o las llamadas de dibujo, añade `?debug=1` a la URL (vista de diagnóstico en pantalla cuando el navegador la exponga).
-- Se recomienda HTTPS para WebXR y conexión a Internet para Three.js y otros recursos CDN que ya existían.
+- El **jetpack** usa exclusivamente `public/jetpack_ligero.mp3`, que se reproduce
+  en bucle solo mientras el jugador mantiene la propulsión. Se pausa al soltar
+  el control, al morir, al ganar, al reiniciar y al salir de VR.
+- Se retiró toda **síntesis de audio del juego** (osciladores de motor, lluvia,
+  trueno, ricochets, explosiones, rugido de acordes y efectos procedurales).
+  Permanecen los archivos MP3 del jugador, Ultron, Jarvis, pisadas y música.
+  Los eventos para los que no se proporcionó un audio grabado quedan sin
+  sonido adicional; sus efectos visuales se conservan.
+- Los anillos de impacto se centran bajo **marcadores unidos a las suelas de
+  las botas animadas**, usando sus posiciones mundiales reales y proyectando
+  el resultado al suelo negro. El choque de la caída final se centra debajo
+  del torso y el impacto de rodilla en el pie correspondiente.
+- El clip `jetpack_ligero.mp3` dura aproximadamente 0,91 s; por diseño se
+  repite mientras el propulsor está encendido.
+- Verificar las transiciones de reproducción y precisión del impacto en
+  Meta Quest Pro y Quest 3 antes de publicar la versión definitiva.

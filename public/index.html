@@ -73,6 +73,28 @@
         body.vr-active #hud {
             display: none !important;
         }
+        #jetpack-password-overlay {
+            position: fixed; inset: 0; z-index: 75;
+            display: none; align-items: center; justify-content: center;
+            background: rgba(0,0,0,.84); font-family: 'Share Tech Mono', monospace;
+        }
+        #jetpack-password-overlay.active { display: flex; }
+        body.vr-active #jetpack-password-overlay { display: none !important; }
+        #jetpack-password-form {
+            width: min(92vw, 430px); padding: 30px; text-align: center;
+            background: #07121b; border: 2px solid #20c4cd; border-radius: 20px;
+            box-shadow: 0 0 45px #03baca44;
+            color: #c8f8fc;
+        }
+        #jetpack-password-input {
+            width: 100%; text-align: center; margin: 18px 0; padding: 12px;
+            background: #000; color: white; font: bold 28px monospace;
+            letter-spacing: .5em; border: 1px solid #17bac6; border-radius: 12px;
+        }
+        #jetpack-password-form button {
+            width: 100%; background: #008b91; color: #fff;
+            padding: 13px; border-radius: 10px; font-weight: 700;
+        }
     </style>
 
     <!-- Import Map para Three.js y WebXR -->
@@ -194,6 +216,16 @@
         </div>
     </div>
 
+    <div id="jetpack-password-overlay" role="dialog" aria-modal="true" aria-label="Password del jetpack">
+        <form id="jetpack-password-form" autocomplete="off">
+            <div style="font-size:22px;font-weight:bold;">JARVIS // ACCESO AL JETPACK</div>
+            <p style="margin-top:12px;color:#91cad4;">Coloca el password que descubrimos en el taller tres de Desarrollo Móvil.</p>
+            <input id="jetpack-password-input" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" placeholder="••••" aria-label="Contraseña de cuatro dígitos" required>
+            <div id="jetpack-password-feedback" aria-live="polite" style="color:#93cdd7;min-height:28px;">Introduce los cuatro dígitos</div>
+            <button type="submit">DESBLOQUEAR JETPACK</button>
+        </form>
+    </div>
+
     <script type="module">
         import * as THREE from 'three';
         import { VRButton } from 'three/addons/webxr/VRButton.js';
@@ -225,6 +257,7 @@
         const STARTING_UP_AUDIO_URL = './StartingUp.mp3'; // Sonido/rugido inicial anterior del mecha
         const ROBOT_POWERUP_AUDIO_URL = './robot_encendido.mp3'; // Nuevo encendido: inicia al terminar el rugido
         const ROBOT_STEP_AUDIO_URL = './RobotStep.mp3'; // Pisadas sincronizadas
+        const JETPACK_THRUST_AUDIO_URL = './jetpack_ligero.mp3'; // Clip aportado por el usuario; bucle mientras impulsa
 
         const soundCache = new Map();
         function playSoundResource(url, volume = 1.0) {
@@ -270,7 +303,7 @@
         }
 
         // Audios locales, precargados; el rugido termina ANTES de comenzar el encendido.
-        for (const url of [STARTING_UP_AUDIO_URL, ROBOT_POWERUP_AUDIO_URL, ROBOT_STEP_AUDIO_URL, SHOT_AUDIO_URL, BOSS_SHOOT_AUDIO_URL]) {
+        for (const url of [STARTING_UP_AUDIO_URL, ROBOT_POWERUP_AUDIO_URL, ROBOT_STEP_AUDIO_URL, SHOT_AUDIO_URL, BOSS_SHOOT_AUDIO_URL, JETPACK_THRUST_AUDIO_URL]) {
             const clip = new Audio(url);
             clip.preload = 'auto';
             clip.load();
@@ -333,337 +366,56 @@
             }
         }
 
-        // ============================================================================
-        // 2. SISTEMA DE SONIDO SINTETIZADO + REPRODUCCIÓN MP3
-        // ============================================================================
-        class SoundSystem {
-            constructor() {
-                this.ctx = null;
-                this.masterGain = null;
-                this.thrusterOsc = null;
-                this.thrusterGain = null;
-                this.rainSource = null;
-                this.rainGain = null;
-            }
 
-            init() {
-                if (this.ctx) {
-                    if (this.ctx.state === 'suspended') this.ctx.resume();
-                    this.startRainAmbience();
-                    return;
-                }
-                const AudioCtx = window.AudioContext || window.webkitAudioContext;
-                this.ctx = new AudioCtx();
-                this.masterGain = this.ctx.createGain();
-                this.masterGain.gain.value = 0.55;
-                this.masterGain.connect(this.ctx.destination);
-                this.startRainAmbience();
-            }
+// ============================================================================
+// 2. AUDIO EXCLUSIVAMENTE DE ARCHIVOS GRABADOS (SIN SÍNTESIS)
+// ============================================================================
+class SoundSystem {
+    constructor() {
+        this.jetpackAudio = soundCache.get(JETPACK_THRUST_AUDIO_URL).cloneNode(true);
+        this.jetpackAudio.preload = 'auto';
+        this.jetpackAudio.loop = true;
+        this.jetpackAudio.volume = 0.64;
+        this.jetpackPlaying = false;
+    }
 
-            startRainAmbience() {
-                if (!this.ctx || this.rainSource) return;
-                const dur = 4.0;
-                const sampleRate = this.ctx.sampleRate;
-                const bufSize = Math.floor(sampleRate * dur);
-                const rainBuf = this.ctx.createBuffer(2, bufSize, sampleRate);
+    init() {
+        // No inicializamos osciladores, buffers de ruido ni AudioContext propios.
+        // El navegador habilita los MP3 tras la interacción del usuario.
+    }
 
-                // Generar lluvia estéreo continua (ruido rosa/marrón de tormenta + micro-gotas en el piso mojado)
-                for (let ch = 0; ch < 2; ch++) {
-                    const data = rainBuf.getChannelData(ch);
-                    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
-                    for (let i = 0; i < bufSize; i++) {
-                        const white = Math.random() * 2 - 1;
-                        b0 = 0.99886 * b0 + white * 0.0555179;
-                        b1 = 0.99332 * b1 + white * 0.0750759;
-                        b2 = 0.96900 * b2 + white * 0.1538520;
-                        b3 = 0.86650 * b3 + white * 0.3104856;
-                        b4 = 0.55000 * b4 + white * 0.5329522;
-                        b5 = -0.7616 * b5 - white * 0.0168980;
-                        const pink = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.045;
-                        b6 = white * 0.115926;
+    playPlayerShoot() { playPooledFireSound(SHOT_AUDIO_URL, 0.88, 8); }
+    playBossShoot() { playPooledFireSound(BOSS_SHOOT_AUDIO_URL, 0.92, 2); }
+    playCannonBeamBlast() { this.playBossShoot(); }
+    playColossalFootstep() { playSoundResource(ROBOT_STEP_AUDIO_URL, 0.96); }
+    playMechaAwakeningSequence() { startAwakeningSoundSequence(); }
 
-                        // Chisporroteo sutil de gotas de agua chocando contra el asfalto
-                        const droplet = (Math.random() > 0.9965) ? (Math.random() * 2 - 1) * 0.32 : 0;
-                        // Envolvente de cruce suave en los bordes del bucle para que no se note el corte
-                        const fade = Math.min(1.0, Math.min(i / (sampleRate * 0.08), (bufSize - i) / (sampleRate * 0.08)));
-                        data[i] = (pink + droplet + white * 0.035) * fade;
-                    }
-                }
-
-                this.rainSource = this.ctx.createBufferSource();
-                this.rainSource.buffer = rainBuf;
-                this.rainSource.loop = true;
-
-                const lowpass = this.ctx.createBiquadFilter();
-                lowpass.type = 'lowpass';
-                lowpass.frequency.setValueAtTime(1650, this.ctx.currentTime);
-
-                const highpass = this.ctx.createBiquadFilter();
-                highpass.type = 'highpass';
-                highpass.frequency.setValueAtTime(220, this.ctx.currentTime);
-
-                this.rainGain = this.ctx.createGain();
-                this.rainGain.gain.setValueAtTime(0.32, this.ctx.currentTime);
-
-                this.rainSource.connect(lowpass);
-                lowpass.connect(highpass);
-                highpass.connect(this.rainGain);
-                this.rainGain.connect(this.masterGain);
-                this.rainSource.start(0);
-            }
-
-            playCannonBeamBlast() {
-                // Compatibilidad con cualquier ataque de cañón: mismo MP3, sin síntesis adicional.
-                this.playBossShoot();
-            }
-
-            playPlayerShoot() {
-                // El único sonido del disparo es el MP3 subido por el usuario.
-                playPooledFireSound(SHOT_AUDIO_URL, 0.88, 8);
-            }
-
-            playMechaAwakeningSequence() {
-                this.init();
-                startAwakeningSoundSequence();
-            }
-
-            playJetpackEquip() {
-                this.init();
-                if (!this.ctx) return;
-                const now = this.ctx.currentTime;
-                [261.63, 329.63, 392.00, 523.25].forEach((freq, idx) => {
-                    const osc = this.ctx.createOscillator();
-                    const gain = this.ctx.createGain();
-                    osc.type = 'triangle';
-                    osc.frequency.setValueAtTime(freq, now + idx * 0.08);
-                    gain.gain.setValueAtTime(0.24, now + idx * 0.08);
-                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.35);
-                    osc.connect(gain);
-                    gain.connect(this.masterGain);
-                    osc.start(now + idx * 0.08);
-                    osc.stop(now + idx * 0.08 + 0.36);
-                });
-            }
-
-            setJetpackThrusterActive(active, altitudeRatio = 0) {
-                this.init();
-                if (!this.ctx) return;
-                const now = this.ctx.currentTime;
-                if (active) {
-                    if (!this.thrusterOsc) {
-                        this.thrusterOsc = this.ctx.createOscillator();
-                        this.thrusterGain = this.ctx.createGain();
-                        this.thrusterOsc.type = 'sawtooth';
-                        this.thrusterOsc.frequency.setValueAtTime(85, now);
-                        this.thrusterGain.gain.setValueAtTime(0.01, now);
-                        this.thrusterOsc.connect(this.thrusterGain);
-                        this.thrusterGain.connect(this.masterGain);
-                        this.thrusterOsc.start(now);
-                    }
-                    this.thrusterOsc.frequency.setTargetAtTime(92 + altitudeRatio * 65, now, 0.08);
-                    this.thrusterGain.gain.setTargetAtTime(0.14, now, 0.06);
-                } else if (this.thrusterGain) {
-                    this.thrusterGain.gain.setTargetAtTime(0.0001, now, 0.08);
-                }
-            }
-
-            playColossalFootstep() {
-                playSoundResource(ROBOT_STEP_AUDIO_URL, 0.96); // Cada pisada real de Ultron
-                this.init();
-                if (!this.ctx) return;
-                const now = this.ctx.currentTime;
-                const subOsc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                subOsc.type = 'sine';
-                subOsc.frequency.setValueAtTime(75, now);
-                subOsc.frequency.exponentialRampToValueAtTime(18, now + 0.45);
-                gain.gain.setValueAtTime(0.55, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.48);
-                subOsc.connect(gain);
-                gain.connect(this.masterGain);
-                subOsc.start(now);
-                subOsc.stop(now + 0.49);
-            }
-
-            playBossShoot() {
-                // Se reproduce al lanzar el proyectil, no mientras se carga.
-                playPooledFireSound(BOSS_SHOOT_AUDIO_URL, 0.92, 2);
-            }
-
-            playCriticalHit() {
-                this.init();
-                if (!this.ctx) return;
-                const now = this.ctx.currentTime;
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(520, now);
-                osc.frequency.exponentialRampToValueAtTime(1380, now + 0.14);
-                gain.gain.setValueAtTime(0.28, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
-                osc.connect(gain);
-                gain.connect(this.masterGain);
-                osc.start(now);
-                osc.stop(now + 0.17);
-            }
-
-            playArmorRicochet() {
-                this.init();
-                if (!this.ctx) return;
-                const now = this.ctx.currentTime;
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(1950, now);
-                osc.frequency.exponentialRampToValueAtTime(340, now + 0.12);
-                gain.gain.setValueAtTime(0.18, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
-                osc.connect(gain);
-                gain.connect(this.masterGain);
-                osc.start(now);
-                osc.stop(now + 0.14);
-            }
-
-            playTurbineDestroyed() {
-                this.init();
-                if (!this.ctx) return;
-                const now = this.ctx.currentTime;
-                const dur = 1.25;
-                const bufSize = Math.floor(this.ctx.sampleRate * dur);
-                const buf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
-                const data = buf.getChannelData(0);
-                for (let i = 0; i < bufSize; i++) {
-                    data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufSize, 0.55);
-                }
-                const noise = this.ctx.createBufferSource();
-                noise.buffer = buf;
-                const filter = this.ctx.createBiquadFilter();
-                filter.type = 'lowpass';
-                filter.frequency.setValueAtTime(920, now);
-                filter.frequency.exponentialRampToValueAtTime(42, now + dur);
-                const gain = this.ctx.createGain();
-                gain.gain.setValueAtTime(0.65, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
-                noise.connect(filter);
-                filter.connect(gain);
-                gain.connect(this.masterGain);
-                noise.start(now);
-                noise.stop(now + dur);
-            }
-
-            playPowerDownCollapse() {
-                this.init();
-                if (!this.ctx) return;
-                const now = this.ctx.currentTime;
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(280, now);
-                osc.frequency.exponentialRampToValueAtTime(24, now + 2.4);
-                gain.gain.setValueAtTime(0.42, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 2.45);
-                osc.connect(gain);
-                gain.connect(this.masterGain);
-                osc.start(now);
-                osc.stop(now + 2.5);
-            }
-
-            playUltronVoiceChord() {
-                this.init();
-                if (!this.ctx) return;
-                const now = this.ctx.currentTime;
-                [82, 104, 123, 164].forEach(f => {
-                    const osc = this.ctx.createOscillator();
-                    const gain = this.ctx.createGain();
-                    osc.type = 'sawtooth';
-                    osc.frequency.setValueAtTime(f, now);
-                    osc.frequency.linearRampToValueAtTime(f * 0.86, now + 0.75);
-                    gain.gain.setValueAtTime(0.09, now);
-                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.75);
-                    osc.connect(gain);
-                    gain.connect(this.masterGain);
-                    osc.start(now);
-                    osc.stop(now + 0.76);
-                });
-            }
-
-            playThunder(intensity = 1.0) {
-                this.init();
-                if (!this.ctx) return;
-                const now = this.ctx.currentTime;
-
-                // 1. Chasquido eléctrico inicial (Arc Snap de alta frecuencia al quebrarse el aire)
-                const snapDur = 0.14;
-                const snapSamples = Math.floor(this.ctx.sampleRate * snapDur);
-                const snapBuf = this.ctx.createBuffer(1, snapSamples, this.ctx.sampleRate);
-                const snapData = snapBuf.getChannelData(0);
-                for (let i = 0; i < snapSamples; i++) {
-                    snapData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / snapSamples, 2.2);
-                }
-                const snapNoise = this.ctx.createBufferSource();
-                snapNoise.buffer = snapBuf;
-                const snapFilter = this.ctx.createBiquadFilter();
-                snapFilter.type = 'bandpass';
-                snapFilter.frequency.setValueAtTime(2200, now);
-                snapFilter.frequency.exponentialRampToValueAtTime(380, now + snapDur);
-                snapFilter.Q.value = 1.4;
-                const snapGain = this.ctx.createGain();
-                snapGain.gain.setValueAtTime(0.32 * intensity, now);
-                snapGain.gain.exponentialRampToValueAtTime(0.001, now + snapDur);
-                snapNoise.connect(snapFilter);
-                snapFilter.connect(snapGain);
-                snapGain.connect(this.masterGain);
-                snapNoise.start(now);
-                snapNoise.stop(now + snapDur);
-
-                // 2. Onda de choque sub-grave (golpe seco de trueno en el pecho)
-                const subOsc = this.ctx.createOscillator();
-                const subGain = this.ctx.createGain();
-                subOsc.type = 'triangle';
-                subOsc.frequency.setValueAtTime(98, now + 0.02);
-                subOsc.frequency.exponentialRampToValueAtTime(22, now + 0.95);
-                subGain.gain.setValueAtTime(0.48 * intensity, now + 0.02);
-                subGain.gain.exponentialRampToValueAtTime(0.001, now + 1.0);
-                subOsc.connect(subGain);
-                subGain.connect(this.masterGain);
-                subOsc.start(now + 0.02);
-                subOsc.stop(now + 1.02);
-
-                // 3. Estruendo atmosférico prolongado con ecos modulados en las nubes (Rolling Thunder)
-                const rumbleDur = 2.85;
-                const rumbleSamples = Math.floor(this.ctx.sampleRate * rumbleDur);
-                const rumbleBuf = this.ctx.createBuffer(1, rumbleSamples, this.ctx.sampleRate);
-                const rumbleData = rumbleBuf.getChannelData(0);
-                for (let i = 0; i < rumbleSamples; i++) {
-                    const t = i / rumbleSamples;
-                    // Tres oleadas naturales de eco de trueno que decaen progresivamente
-                    const swell1 = Math.exp(-Math.pow((t - 0.06) * 8.5, 2.0));
-                    const swell2 = Math.exp(-Math.pow((t - 0.24) * 5.0, 2.0)) * 0.72;
-                    const swell3 = Math.exp(-Math.pow((t - 0.52) * 3.2, 2.0)) * 0.45;
-                    const tail = Math.pow(1.0 - t, 1.6) * 0.35;
-                    const env = Math.min(1.0, swell1 + swell2 + swell3 + tail);
-                    rumbleData[i] = (Math.random() * 2 - 1) * env;
-                }
-                const rumbleNoise = this.ctx.createBufferSource();
-                rumbleNoise.buffer = rumbleBuf;
-
-                const rumbleFilter = this.ctx.createBiquadFilter();
-                rumbleFilter.type = 'lowpass';
-                rumbleFilter.frequency.setValueAtTime(420, now);
-                rumbleFilter.frequency.exponentialRampToValueAtTime(140, now + 0.65);
-                rumbleFilter.frequency.exponentialRampToValueAtTime(42, now + rumbleDur);
-
-                const rumbleGain = this.ctx.createGain();
-                rumbleGain.gain.setValueAtTime(0.56 * intensity, now);
-                rumbleGain.gain.exponentialRampToValueAtTime(0.001, now + rumbleDur);
-
-                rumbleNoise.connect(rumbleFilter);
-                rumbleFilter.connect(rumbleGain);
-                rumbleGain.connect(this.masterGain);
-                rumbleNoise.start(now);
-                rumbleNoise.stop(now + rumbleDur);
-            }
+    setJetpackThrusterActive(active) {
+        // Flanco de activación/desactivación, no reiniciar MP3 en cada fotograma.
+        if (active === this.jetpackPlaying) return;
+        this.jetpackPlaying = active;
+        if (active) {
+            this.jetpackAudio.play().catch(() => {
+                // Reintentar en el siguiente frame si aún no hay permiso de audio.
+                this.jetpackPlaying = false;
+            });
+        } else {
+            this.jetpackAudio.pause();
+            try { this.jetpackAudio.currentTime = 0; } catch (err) {}
         }
+    }
+
+    stopJetpack() { this.setJetpackThrusterActive(false); }
+
+    // Sin grabación correspondiente: no producir ruido u osciladores sintéticos.
+    // Se mantienen intactos los efectos VISUALES de impacto, fuego y rayos.
+    playJetpackEquip() {}
+    playCriticalHit() {}
+    playArmorRicochet() {}
+    playTurbineDestroyed() {}
+    playPowerDownCollapse() {}
+    playThunder() {}
+}
 
         const sound = new SoundSystem();
 
@@ -802,9 +554,9 @@
         const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 8500);
         camera.position.set(0, 1.7, 0);
 
-        // Dolly del jugador (inicia en z = 44 mirando hacia el Jetpack en z = 12 y Ultron en z = -235)
+        // Dolly del jugador (inicio prolongado z = 210; Jetpack z = 24; Ultron z = -235)
         const playerDolly = new THREE.Group();
-        playerDolly.position.set(0, 0, 44);
+        playerDolly.position.set(0, 0, 210);
         scene.add(playerDolly);
         playerDolly.add(camera);
 
@@ -835,13 +587,16 @@
                 catch (e) { console.warn('Foveación no disponible en esta sesión:',e); }
             }
             document.body.classList.add('vr-active');
+            if (passwordOpen) { passwordMesh.visible = true; passwordInput.blur(); }
             document.body.classList.add('game-active');
             sound.init();
             gameState.isRunning = true;
             startJarvisWelcomeOnce();
         });
         renderer.xr.addEventListener('sessionend', () => {
+            sound.stopJetpack();
             document.body.classList.remove('vr-active');
+            if (passwordOpen) { passwordMesh.visible = false; passwordOverlay.classList.add('active'); }
         });
         document.body.appendChild(vrButton);
 
@@ -868,46 +623,74 @@
 
 
         // ============================================================================
-        // JARVIS: notificaciones VR 3D procedentes del diseño de index (5).html.
-        // Copia el estilo de sus cuadros de diálogo, sustituyendo TecGPT por Jarvis.
-        // El MP3 se intenta reproducir durante la interacción del usuario al comenzar.
+        // JARVIS — diálogos 3D VR y PC, voces locales y cola con prioridad.
         // ============================================================================
         const JARVIS_DIALOGUES = Object.freeze({
             welcome: {
                 text: 'Boss, sigue el enjambre de partículas. Te dirá adónde ir.',
                 url: './Jarvis_Boss_sigue_el_enjambre_de_particulas_te_dira_adonde_ir.mp3',
-                duration: 4.068
+                duration: 4.07
+            },
+            password: {
+                text: 'Coloca el password que descubrimos en el taller tres de Desarrollo Móvil.',
+                url: './Jarvis_coloca_el_password_que_descubrimos_en_el_taller_tres_de_desarrollo_movil.mp3',
+                duration: 4.81
             },
             jetpack: {
-                text: 'Boss, con el Jetpack, ahora puedes volar con el gatillo secundario izquierdo.',
+                text: 'Boss, con el jetpack ahora puedes volar con el gatillo secundario izquierdo.',
                 url: './Jarvis_Boss_con_el_jetpack_ahora_puedes_volar_con_el_gatillo_secundario_izquierdo.mp3',
-                duration: 5.642
+                duration: 5.64
+            },
+            turbines: {
+                text: 'Mira el color de las turbinas. Aprovecha las debilidades que aprendimos en el taller uno de Ciberseguridad.',
+                url: './Jarvis_mira_el_color_de_las_turbinas_aprovecha_las_debilidades_del_taller_uno.mp3',
+                duration: 5.76
+            },
+            switch: {
+                text: 'No olvides que puedes cambiar de arma con el joystick derecho.',
+                url: './Jarvis_no_olvides_cambiar_de_arma_con_el_joystick_derecho.mp3',
+                duration: 3.63
+            },
+            hermosillo: {
+                text: '¡Ya casi llega a Hermosillo! ¡Tienes que detenerlo!',
+                url: './Jarvis_ya_casi_llega_a_Hermosillo_tienes_que_detenerlo.mp3',
+                duration: 3.41
+            },
+            death: {
+                text: '¡Boss, estás ahí! ¡Responde, responde, Boss!',
+                url: './Jarvis_Boss_estas_ahi_responde_responde_Boss.mp3',
+                duration: 4.39
+            },
+            victory: {
+                text: '¡Boss, lo conseguiste! ¡Eres una leyenda!',
+                url: './Jarvis_Boss_lo_conseguiste_eres_una_leyenda.mp3',
+                duration: 4.84
             }
         });
-
         const jarvisCanvas = document.createElement('canvas');
         jarvisCanvas.width = 1200;
-        jarvisCanvas.height = 260;
+        jarvisCanvas.height = 300;
         const jarvisCtx = jarvisCanvas.getContext('2d');
         const jarvisTex = new THREE.CanvasTexture(jarvisCanvas);
         const jarvisMesh = new THREE.Mesh(
-            new THREE.PlaneGeometry(1.95, 0.42),
+            new THREE.PlaneGeometry(2.0, 0.48),
             new THREE.MeshBasicMaterial({
                 map: jarvisTex, transparent: true, opacity: 0,
                 depthTest: false, depthWrite: false, fog: false
             })
         );
-        jarvisMesh.renderOrder = 1001;
-        jarvisMesh.position.set(0, -0.78, -1.23);
+        jarvisMesh.renderOrder = 1003;
+        jarvisMesh.position.set(0, -0.78, -1.20);
         camera.add(jarvisMesh);
         let jarvisOpeningStarted = false;
         let jarvisActive = null;
+        const jarvisQueue = [];
+        const jarvisPlayed = new Set();
         const jarvisVoiceCache = {};
         for (const [key, dialogue] of Object.entries(JARVIS_DIALOGUES)) {
             const audio = new Audio(dialogue.url);
             audio.preload = 'auto';
             audio.volume = 0.97;
-            audio.load();
             jarvisVoiceCache[key] = audio;
         }
 
@@ -924,92 +707,94 @@
             ctx.quadraticCurveTo(x, y, x + r, y);
             ctx.closePath();
         }
-
         function drawJarvisDialogue(text, visibleChars = Infinity) {
-            jarvisCtx.clearRect(0, 0, 1200, 260);
+            jarvisCtx.clearRect(0, 0, jarvisCanvas.width, jarvisCanvas.height);
             if (!text) { jarvisTex.needsUpdate = true; return; }
             jarvisCtx.fillStyle = 'rgba(0, 20, 10, 0.72)';
-            jarvisRoundedRect(jarvisCtx, 80, 32, 1040, 188, 24);
+            jarvisRoundedRect(jarvisCtx, 75, 22, 1050, 242, 24);
             jarvisCtx.fill();
             jarvisCtx.strokeStyle = 'rgba(0, 255, 170, 0.82)';
             jarvisCtx.lineWidth = 5;
             jarvisCtx.stroke();
-
             const fullText = `Jarvis: "${text}"`;
             const typed = fullText.slice(0, Math.max(0, Math.min(fullText.length, visibleChars)));
-            jarvisCtx.font = 'bold 35px Courier New, monospace';
+            jarvisCtx.font = 'bold 31px Courier New, monospace';
             jarvisCtx.textAlign = 'center';
             jarvisCtx.textBaseline = 'middle';
             jarvisCtx.fillStyle = 'rgba(234, 255, 255, 0.96)';
-            const words = typed.split(' ');
             const lines = [];
             let line = '';
-            for (const word of words) {
+            for (const word of typed.split(' ')) {
                 const candidate = line ? line + ' ' + word : word;
-                if (line && jarvisCtx.measureText(candidate).width > 965) {
-                    lines.push(line);
-                    line = word;
+                if (line && jarvisCtx.measureText(candidate).width > 970) {
+                    lines.push(line); line = word;
                 } else line = candidate;
             }
             if (line) lines.push(line);
-            const y0 = 126 - (lines.length - 1) * 23;
-            lines.forEach((item, i) => jarvisCtx.fillText(item, 600, y0 + i * 46));
+            const lineHeight = lines.length > 3 ? 37 : 41;
+            const y0 = 146 - ((lines.length - 1) * lineHeight) / 2;
+            lines.forEach((item, i) => jarvisCtx.fillText(item, 600, y0 + i * lineHeight));
             jarvisTex.needsUpdate = true;
         }
-
         function stopJarvisDialogue() {
             if (jarvisActive) {
-                jarvisActive.audio.pause();
-                jarvisActive.audio.onended = null;
-                jarvisActive.audio.onerror = null;
-                jarvisActive.audio.onplaying = null;
-                try { jarvisActive.audio.currentTime = 0; } catch (err) {}
+                const audio = jarvisActive.audio;
+                audio.pause();
+                audio.onplaying = null;
+                audio.onended = null;
+                try { audio.currentTime = 0; } catch (err) {}
             }
             jarvisActive = null;
             jarvisMesh.material.opacity = 0;
             drawJarvisDialogue('');
         }
-
-        function speakJarvis(key) {
+        function startJarvisKey(key) {
             const dialogue = JARVIS_DIALOGUES[key];
             if (!dialogue) return;
-            stopJarvisDialogue(); // La segunda indicación tiene prioridad al recoger el jetpack.
             const audio = jarvisVoiceCache[key];
             try { audio.currentTime = 0; } catch (err) {}
             jarvisActive = {
-                text: dialogue.text,
-                audio,
+                text: dialogue.text, audio,
                 startTime: clock.getElapsedTime(),
-                minDuration: Math.max(5.0, dialogue.duration + 1.2),
-                typeDuration: Math.max(2.3, dialogue.duration * 0.94),
+                minDuration: Math.max(5.1, dialogue.duration + 1.05),
+                typeDuration: Math.max(2.25, dialogue.duration * 0.91),
                 lastChars: -1
             };
             drawJarvisDialogue(dialogue.text, 0);
             audio.onplaying = () => {
                 if (jarvisActive && jarvisActive.audio === audio) {
-                    // La escritura empieza cuando realmente arranca el audio, si hubo buffering.
                     jarvisActive.startTime = clock.getElapsedTime();
                     jarvisActive.lastChars = -1;
                 }
             };
-            const playPromise = audio.play();
-            if (playPromise && typeof playPromise.catch === 'function') {
-                playPromise.catch(() => { /* Subtítulo sigue visible si el navegador bloquea audio. */ });
-            }
+            const promise = audio.play();
+            if (promise && promise.catch) promise.catch(() => {});
         }
-
+        function speakJarvis(key, interrupt = false) {
+            if (!JARVIS_DIALOGUES[key] || jarvisPlayed.has(key)) return;
+            jarvisPlayed.add(key);
+            if (interrupt) {
+                jarvisQueue.length = 0;
+                stopJarvisDialogue();
+            }
+            if (jarvisActive) { jarvisQueue.push(key); return; }
+            startJarvisKey(key);
+        }
         function startJarvisWelcomeOnce() {
             if (jarvisOpeningStarted || gameState.isGameOver) return;
             jarvisOpeningStarted = true;
             speakJarvis('welcome');
         }
-
         function updateJarvisDialogue() {
             const item = jarvisActive;
             if (!item) return;
             const elapsed = Math.max(0, clock.getElapsedTime() - item.startTime);
             const duration = item.minDuration;
-            if (elapsed >= duration) { stopJarvisDialogue(); return; }
+            if (elapsed >= duration) {
+                stopJarvisDialogue();
+                if (jarvisQueue.length && !gameState.isGameOver) startJarvisKey(jarvisQueue.shift());
+                return;
+            }
             const chars = Math.floor((elapsed / item.typeDuration) * (`Jarvis: "${item.text}"`).length);
             if (chars !== item.lastChars) {
                 item.lastChars = chars;
@@ -1017,11 +802,179 @@
             }
             const inAlpha = THREE.MathUtils.clamp(elapsed / 0.40, 0, 1);
             const outAlpha = THREE.MathUtils.clamp((duration - elapsed) / 0.45, 0, 1);
-            const alpha = Math.min(inAlpha, outAlpha);
-            jarvisMesh.material.opacity = alpha * 0.90;
+            jarvisMesh.material.opacity = Math.min(inAlpha, outAlpha) * 0.92;
             const easeOut = 1 - Math.pow(1 - inAlpha, 3);
-            jarvisMesh.position.y = THREE.MathUtils.lerp(-0.78, -0.57, easeOut) - (1 - outAlpha) * 0.10;
+            jarvisMesh.position.y = THREE.MathUtils.lerp(passwordOpen ? -0.95 : -0.78, passwordOpen ? -0.87 : -0.55, easeOut) - (1 - outAlpha) * 0.1;
         }
+
+        // ============================================================================
+        // CLAVE DEL JETPACK — formulario de escritorio y teclado 3D apuntable en VR.
+        // La contraseña es parte de la misión; no requiere servicios ni conexión externa.
+        // ============================================================================
+        let passwordOpen = false;
+        let passwordDigits = '';
+        let passwordError = '';
+        const passwordOverlay = document.getElementById('jetpack-password-overlay');
+        const passwordInput = document.getElementById('jetpack-password-input');
+        const passwordFeedback = document.getElementById('jetpack-password-feedback');
+        const passwordCanvas = document.createElement('canvas');
+        passwordCanvas.width = 1024;
+        passwordCanvas.height = 1152;
+        const passwordCtx = passwordCanvas.getContext('2d');
+        const passwordTexture = new THREE.CanvasTexture(passwordCanvas);
+        const passwordMesh = new THREE.Mesh(
+            new THREE.PlaneGeometry(1.28, 1.44),
+            new THREE.MeshBasicMaterial({map: passwordTexture, transparent: true,
+                depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide})
+        );
+        passwordMesh.position.set(0, 0.12, -1.5);
+        passwordMesh.renderOrder = 1010;
+        passwordMesh.visible = false;
+        camera.add(passwordMesh);
+        // Puntero luminoso de selección, solo visible mientras se apunta al teclado VR.
+        const passwordPointer = new THREE.Mesh(
+            new THREE.RingGeometry(0.014, 0.024, 20),
+            new THREE.MeshBasicMaterial({color: 0xffffff, transparent: true,
+                opacity: 0.95, depthTest: false, depthWrite: false})
+        );
+        passwordPointer.visible = false;
+        passwordPointer.renderOrder = 1011;
+        passwordPointer.position.z = 0.005;
+        passwordMesh.add(passwordPointer);
+        const passwordButtons = [];
+        for (const [row, group] of [
+            ['1', '2', '3'], ['4', '5', '6'], ['7', '8', '9'], ['BORRAR', '0', 'OK']
+        ].entries()) {
+            group.forEach((label, col) => {
+                passwordButtons.push({label, x: 116 + 258 * col, y: 450 + row * 150, w: 242, h: 126});
+            });
+        }
+        function paintPasswordPanel() {
+            const ctx = passwordCtx;
+            ctx.clearRect(0, 0, 1024, 1152);
+            ctx.fillStyle = 'rgba(4, 14, 21, 0.93)';
+            jarvisRoundedRect(ctx, 47, 46, 930, 1044, 45); ctx.fill();
+            ctx.strokeStyle = '#24e4dd'; ctx.lineWidth = 8; ctx.stroke();
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#d9fbff'; ctx.font = 'bold 59px Courier New';
+            ctx.fillText('ACCESO AL JETPACK', 512, 148);
+            ctx.font = '31px Courier New'; ctx.fillStyle = '#91dbe1';
+            ctx.fillText('Introduce el password del taller 3', 512, 216);
+            ctx.fillStyle = '#ffffff'; ctx.font = 'bold 94px Courier New';
+            ctx.fillText('●'.repeat(passwordDigits.length) + '○'.repeat(4-passwordDigits.length), 512, 340);
+            for (const b of passwordButtons) {
+                ctx.fillStyle = b.label === 'OK' ? '#087669' : '#172a39';
+                jarvisRoundedRect(ctx, b.x, b.y, b.w, b.h, 22); ctx.fill();
+                ctx.strokeStyle = '#2ca5a5'; ctx.lineWidth = 4; ctx.stroke();
+                ctx.fillStyle = '#e5fbff';
+                ctx.font = b.label === 'BORRAR' ? 'bold 32px Courier New' : 'bold 60px Courier New';
+                ctx.fillText(b.label, b.x + b.w / 2, b.y + 82);
+            }
+            ctx.font = 'bold 26px Courier New';
+            ctx.fillStyle = passwordError ? '#ff9292' : '#a8e0db';
+            ctx.fillText(passwordError || 'Apunta y pulsa el gatillo para introducirlo', 512, 1080);
+            passwordTexture.needsUpdate = true;
+        }
+        function refreshPasswordUI() {
+            passwordInput.value = passwordDigits;
+            passwordFeedback.textContent = passwordError || 'Introduce los cuatro dígitos';
+            paintPasswordPanel();
+        }
+        function requestJetpackPassword() {
+            if (passwordOpen || gameState.hasJetpack || !gameState.isRunning || gameState.isGameOver) return;
+            passwordOpen = true;
+            passwordDigits = '';
+            passwordError = '';
+            isMouseDownLeft = false;
+            if (rightController) rightController.userData.isSelecting = false;
+            if (leftController) leftController.userData.isSelecting = false;
+            if (document.pointerLockElement === canvas && document.exitPointerLock) document.exitPointerLock();
+            passwordOverlay.classList.add('active');
+            passwordMesh.visible = renderer.xr.isPresenting;
+            refreshPasswordUI();
+            if (!renderer.xr.isPresenting) passwordInput.focus();
+            speakJarvis('password', true);
+        }
+        function submitJetpackPassword() {
+            if (!passwordOpen) return;
+            if (passwordDigits === '1122') {
+                passwordOpen = false;
+                passwordOverlay.classList.remove('active');
+                passwordMesh.visible = false;
+                passwordInput.blur();
+                equipJetpack();
+            } else {
+                passwordError = 'Código incorrecto. Intenta de nuevo.';
+                passwordDigits = '';
+                refreshPasswordUI();
+            }
+        }
+        function inputJetpackDigit(value) {
+            if (!passwordOpen) return;
+            passwordError = '';
+            if (value === 'BORRAR') passwordDigits = passwordDigits.slice(0, -1);
+            else if (value === 'OK') { submitJetpackPassword(); return; }
+            else if (/^[0-9]$/.test(value) && passwordDigits.length < 4) passwordDigits += value;
+            refreshPasswordUI();
+        }
+        document.getElementById('jetpack-password-form').addEventListener('submit', (event) => {
+            event.preventDefault();
+            passwordDigits = passwordInput.value.replace(/\D/g, '').slice(0, 4);
+            submitJetpackPassword();
+        });
+        passwordInput.addEventListener('input', () => {
+            passwordDigits = passwordInput.value.replace(/\D/g, '').slice(0, 4);
+            passwordError = '';
+            refreshPasswordUI();
+        });
+        const passwordRaycaster = new THREE.Raycaster();
+        const passwordRayOrigin = new THREE.Vector3();
+        const passwordRayDirection = new THREE.Vector3();
+        const passwordRayQuaternion = new THREE.Quaternion();
+        function updateVRPasswordPointer() {
+            passwordPointer.visible = false;
+            if (!passwordOpen || !renderer.xr.isPresenting) return;
+            for (const controller of [rightController, leftController]) {
+                if (!controller) continue;
+                controller.updateWorldMatrix(true, false);
+                passwordMesh.updateWorldMatrix(true, false);
+                controller.getWorldPosition(passwordRayOrigin);
+                controller.getWorldQuaternion(passwordRayQuaternion);
+                passwordRayDirection.set(0, 0, -1).applyQuaternion(passwordRayQuaternion);
+                passwordRaycaster.set(passwordRayOrigin, passwordRayDirection);
+                passwordRaycaster.far = 8;
+                const hits = passwordRaycaster.intersectObject(passwordMesh, false);
+                if (hits.length && hits[0].uv) {
+                    passwordPointer.position.set((hits[0].uv.x - 0.5)*1.28,
+                        (hits[0].uv.y - 0.5)*1.44, 0.008);
+                    passwordPointer.visible = true;
+                    break;
+                }
+            }
+        }
+        function onVRPasswordSelect(controller) {
+            if (!passwordOpen) return false;
+            controller.updateWorldMatrix(true, false);
+            passwordMesh.updateWorldMatrix(true, false);
+            controller.getWorldPosition(passwordRayOrigin);
+            controller.getWorldQuaternion(passwordRayQuaternion);
+            passwordRayDirection.set(0, 0, -1).applyQuaternion(passwordRayQuaternion);
+            passwordRaycaster.set(passwordRayOrigin, passwordRayDirection);
+            passwordRaycaster.near = 0;
+            passwordRaycaster.far = 8;
+            const hits = passwordRaycaster.intersectObject(passwordMesh, false);
+            if (hits.length && hits[0].uv) {
+                const x = hits[0].uv.x * 1024;
+                const y = (1 - hits[0].uv.y) * 1152;
+                const button = passwordButtons.find(b => x >= b.x && x <= b.x+b.w && y >= b.y && y <= b.y+b.h);
+                if (button) {
+                    inputJetpackDigit(button.label);
+                    triggerControllerHaptics(controller.userData.handedness || 'both', 0.22, 32);
+                }
+            }
+            return true; // Cualquier gatillo usado con el teclado abierto no dispara el arma.
+        }
+        paintPasswordPanel();
 
         let gameOverMesh = null;
         let lastHudPlayerHp = -1;
@@ -1412,6 +1365,7 @@
             left:  { hip: null, knee: null, ankle: null },
             right: { hip: null, knee: null, ankle: null }
         };
+        const footstepContactPoints = { left: null, right: null };
 
         const animatedTurbines = [];
         const vulnerableTurbines = []; // Las 4 turbinas de colores ARC para destruir a Ultron
@@ -1995,6 +1949,13 @@
                 bootToeCap.rotation.x = Math.PI * 0.47;
                 bootToeCap.position.set(0, 0.005, 0.24);
                 footGroup.add(bootToeCap);
+
+                // Centro aproximado de la huella, asociado físicamente a la suela.
+                // Hereda giro, animación, desplazamiento, escala y rotación mundial.
+                const footContact = new THREE.Object3D();
+                footContact.position.set(0, -0.095, 0.13);
+                footGroup.add(footContact);
+                footstepContactPoints[side === 1 ? 'left' : 'right'] = footContact;
 
                 if (side === 1) {
                     legJoints.left.hip = legPivot;
@@ -2991,6 +2952,24 @@
             triggerControllerHaptics('both', 0.8, 160);
         }
 
+        // Se consultan las matrices de la bota ANIMADA, no estimaciones de z y rotación.
+        // La altura del impacto siempre se proyecta al plano del suelo negro (Y=0).
+        const _realFootImpactPosition = new THREE.Vector3();
+        function triggerFootStompAtContact(side, index) {
+            const contact = footstepContactPoints[side];
+            if (!contact) return;
+            colossalUltronAnchor.updateMatrixWorld(true);
+            contact.getWorldPosition(_realFootImpactPosition);
+            triggerFootStomp(_realFootImpactPosition.x, _realFootImpactPosition.z, index);
+        }
+
+        // Para la caída final: el anillo sale bajo la sección del cuerpo que impacta.
+        function triggerBodyImpactAtContact(object, index) {
+            colossalUltronAnchor.updateMatrixWorld(true);
+            object.getWorldPosition(_realFootImpactPosition);
+            triggerFootStomp(_realFootImpactPosition.x, _realFootImpactPosition.z, index);
+        }
+
         function updateStompShockwaves(dt) {
             // Actualizar incluso durante la cinemática de caída del coloso.
             stompShockwaves.forEach(sw => {
@@ -3052,7 +3031,7 @@
 
         // Enjambre guía del Jetpack: 96 sprites puntuales en un único draw call.
         // Un shader mueve las partículas desde el jugador hacia el jetpack, incluso si se desplaza.
-        const GUIDE_PARTICLE_COUNT = 96;
+        const GUIDE_PARTICLE_COUNT = 160;
         const guideGeometry = new THREE.BufferGeometry();
         const guideVertices = new Float32Array(GUIDE_PARTICLE_COUNT * 3);
         const guidePhases = new Float32Array(GUIDE_PARTICLE_COUNT);
@@ -3069,7 +3048,7 @@
         guideGeometry.setAttribute('aSize', new THREE.BufferAttribute(guideSizes, 1));
         const guideUniforms = {
             uTime: { value: 0 },
-            uStart: { value: new THREE.Vector3(0, 1.4, 44) },
+            uStart: { value: new THREE.Vector3(0, 1.4, 210) },
             uGoal: { value: new THREE.Vector3(0, 1.8, 24) }
         };
         const guideMaterial = new THREE.ShaderMaterial({
@@ -3132,7 +3111,7 @@
             if (gameState.hasJetpack) return;
             gameState.hasJetpack = true;
             jetpackGuideParticles.visible = false;
-            speakJarvis('jetpack'); // Caja + audio de Jarvis al recoger el jetpack.
+            speakJarvis('jetpack', true); // Se reproduce solamente tras validar el password.
             gameState.ultronAwakening = true;
             gameState.sequenceTime = 0;
             jetpackPickupGroup.visible = false;
@@ -3140,7 +3119,7 @@
             colossalUltronAnchor.visible = true;
 
             sound.playJetpackEquip();
-            sound.playUltronVoiceChord(); // Rugido grave sintetizado original al despertarse
+            // El rugido se reproduce desde StartingUp.mp3; se eliminó el acorde sintético.
             sound.playMechaAwakeningSequence(); // Primero el audio anterior, después robot_encendido.mp3
             startSoundtrackBGM();
             triggerControllerHaptics('both', 0.9, 250);
@@ -3217,6 +3196,7 @@
                 rightWeaponMesh = createGunMesh();
                 rightController.add(rightWeaponMesh);
                 rightController.addEventListener('selectstart', () => {
+                    if (onVRPasswordSelect(rightController)) return;
                     rightController.userData.isSelecting = true;
                     fireWeapon(rightController, rightWeaponMesh);
                 });
@@ -3226,6 +3206,7 @@
                 leftWeaponMesh = createGunMesh();
                 leftController.add(leftWeaponMesh);
                 leftController.addEventListener('selectstart', () => {
+                    if (onVRPasswordSelect(leftController)) return;
                     leftController.userData.isSelecting = true;
                     fireWeapon(leftController, leftWeaponMesh);
                 });
@@ -3550,7 +3531,7 @@
         }
 
         function fireWeapon(ctrl, wpnMesh) {
-            if (!wpnMesh) return;
+            if (!wpnMesh || passwordOpen) return;
             const now = clock.getElapsedTime();
             const stateHolder = ctrl ? ctrl.userData : wpnMesh.userData;
             if (stateHolder.nextShot && now < stateHolder.nextShot) return;
@@ -3575,18 +3556,34 @@
                 return;
             }
 
-            if (!gameState.hasJetpack && jetpackPickupGroup.visible) {
+            if (!gameState.hasJetpack && jetpackPickupGroup.visible && !passwordOpen) {
                 _v2.subVectors(jetpackPickupGroup.position, startPos);
                 const proj = _v2.dot(direction);
-                if (proj > 0) {
+                if (proj > 0 && proj < 8.5) {
                     _v3.copy(startPos).addScaledVector(direction, proj);
                     if (_v3.distanceTo(jetpackPickupGroup.position) < 2.2) {
-                        equipJetpack();
+                        requestJetpackPassword();
                         return;
                     }
                 }
             }
 
+            // Jarvis recuerda el joystick al apuntar a las turbinas, una sola vez.
+            if (gameState.ultronFullyAwake && !jarvisPlayed.has('switch')) {
+                for (const turbine of vulnerableTurbines) {
+                    if (turbine.destroyed) continue;
+                    turbine.group.getWorldPosition(_turbineWorldPos);
+                    const ox = _turbineWorldPos.x - startPos.x;
+                    const oy = _turbineWorldPos.y - startPos.y;
+                    const oz = _turbineWorldPos.z - startPos.z;
+                    const along = ox * direction.x + oy * direction.y + oz * direction.z;
+                    const missSq = ox*ox + oy*oy + oz*oz - along*along;
+                    if (along > 0 && missSq < 43 * 43) {
+                        speakJarvis('switch');
+                        break;
+                    }
+                }
+            }
             sound.playPlayerShoot();
             const type = getCurrentWeaponType();
             const hex = weaponColors[type] || 0x00ff00;
@@ -3658,6 +3655,7 @@
         }
 
         function updatePlayerAndJetpack(dt, elapsedTime) {
+            if (passwordOpen) { sound.setJetpackThrusterActive(false, 0); return; }
             const p = gameState.player;
             if (weaponSwitchCooldown > 0) weaponSwitchCooldown -= dt;
 
@@ -3673,7 +3671,7 @@
                     playerDolly.position.z - jetpackPickupGroup.position.z
                 );
                 if (distToJp < 3.0) {
-                    equipJetpack();
+                    requestJetpackPassword();
                 }
             }
 
@@ -3726,7 +3724,7 @@
                 _fwDir.normalize();
                 _rtDir.set(-_fwDir.z, 0, _fwDir.x).normalize();
 
-                const airSpeed = (gameState.hasJetpack && playerDolly.position.y > 0.5) ? 44.0 : 22.0;
+                const airSpeed = !gameState.hasJetpack ? 13.5 : ((playerDolly.position.y > 0.5) ? 44.0 : 22.0);
                 playerDolly.position.addScaledVector(_fwDir, -moveZ * airSpeed * dt);
                 playerDolly.position.addScaledVector(_rtDir, moveX * airSpeed * dt);
             }
@@ -3736,7 +3734,7 @@
             p.shockImpulse.multiplyScalar(Math.exp(-dt * 3.2));
 
             // Propulsión vertical del Jetpack a la mitad de velocidad (29.0 m/s máx)
-            if (gameState.hasJetpack && leftGripThrust) {
+            if (gameState.hasJetpack && !gameState.isGameOver && leftGripThrust) {
                 p.vel.y = THREE.MathUtils.lerp(p.vel.y, 29.0, dt * 4.5);
                 sound.setJetpackThrusterActive(true, THREE.MathUtils.clamp(playerDolly.position.y / 600.0, 0, 1));
                 triggerControllerHaptics('left', 0.22, 30);
@@ -3916,7 +3914,7 @@
 
                     if (b.defeatTimer > 4.6 && !b.kneelImpactDone) {
                         b.kneelImpactDone = true;
-                        triggerFootStomp(b.pos.x, b.pos.z + 30, 0);
+                        triggerFootStompAtContact('left', 0);
                     }
                 } else if (b.defeatTimer < 10.4) {
                     // Etapa 2 (6.0s a 8.4s): Caída acelerada por gravedad; (8.4s a 10.4s): Rebote pesado del coloso
@@ -3938,7 +3936,7 @@
                         // Impacto principal contra el suelo en t = 8.4s
                         if (!b.collapseImpactDone) {
                             b.collapseImpactDone = true;
-                            triggerFootStomp(b.pos.x, b.pos.z + 115, 1);
+                            triggerBodyImpactAtContact(torsoGroup, 1);
                             sound.playTurbineDestroyed();
                             gameState.cameraShake = Math.min(2.2, gameState.cameraShake + 1.35);
                             triggerControllerHaptics('both', 1.0, 420);
@@ -3955,7 +3953,7 @@
                             // Segundo impacto al terminar el rebote en bounceElapsed = 0.95s
                             if (!b.bounceImpactDone) {
                                 b.bounceImpactDone = true;
-                                triggerFootStomp(b.pos.x, b.pos.z + 115, 0);
+                                triggerBodyImpactAtContact(torsoGroup, 0);
                             }
                             // Micro-rebote residual de asentamiento
                             const bt2 = (bounceElapsed - 0.95) / 0.60;
@@ -4032,16 +4030,10 @@
             // Transformación local -> mundo usando el giro real del coloso.
             // Así los círculos aparecen debajo de cada bota aunque el jefe haya girado.
             if (leftGait && leftGait.isImpactFrame && !prevLeftFootDown) {
-                const lateral = 0.50 * COLOSSAL_SCALE;
-                const forward = leftGait.footForwardZ * COLOSSAL_SCALE;
-                triggerFootStomp(b.pos.x + lateral * Math.cos(b.facingYaw) + forward * Math.sin(b.facingYaw),
-                    b.pos.z - lateral * Math.sin(b.facingYaw) + forward * Math.cos(b.facingYaw), 0);
+                triggerFootStompAtContact('left', 0);
             }
             if (rightGait && rightGait.isImpactFrame && !prevRightFootDown) {
-                const lateral = -0.50 * COLOSSAL_SCALE;
-                const forward = rightGait.footForwardZ * COLOSSAL_SCALE;
-                triggerFootStomp(b.pos.x + lateral * Math.cos(b.facingYaw) + forward * Math.sin(b.facingYaw),
-                    b.pos.z - lateral * Math.sin(b.facingYaw) + forward * Math.cos(b.facingYaw), 1);
+                triggerFootStompAtContact('right', 1);
             }
             prevLeftFootDown = leftGait ? leftGait.isImpactFrame : false;
             prevRightFootDown = rightGait ? rightGait.isImpactFrame : false;
@@ -4122,6 +4114,27 @@
             damagePlayer(20);
         }
 
+
+        // Aviso al volar cerca de las turbinas y advertencia durante el avance del jefe.
+        function updateJarvisCombatCues() {
+            if (!gameState.ultronFullyAwake || gameState.isGameOver ||
+                gameState.boss.defeatState !== 'NONE') return;
+            if (gameState.hasJetpack && playerDolly.position.y > 18 && !jarvisPlayed.has('turbines')) {
+                const playerPos = getPlayerWorldPos();
+                for (const turbine of vulnerableTurbines) {
+                    if (turbine.destroyed) continue;
+                    turbine.group.getWorldPosition(_turbineWorldPos);
+                    if (playerPos.distanceToSquared(_turbineWorldPos) < 280 * 280) {
+                        speakJarvis('turbines');
+                        break;
+                    }
+                }
+            }
+            if (gameState.walkTime > 12 && !jarvisPlayed.has('hermosillo')) {
+                speakJarvis('hermosillo');
+            }
+        }
+
         // ============================================================================
         // 14. COMBATE, COLISIONES EN LAS 4 TURBINAS Y PARTÍCULAS
         // ============================================================================
@@ -4176,6 +4189,7 @@
                         vt.group.getWorldPosition(_turbineWorldPos);
                         const hitRadius = 21.5; // Radio adaptado a la escala 50.0
                         if (pb.mesh.position.distanceTo(_turbineWorldPos) < hitRadius) {
+                            speakJarvis('switch');
                             hit = true;
                             if (pb.type === vt.type) {
                                 vt.hp = Math.max(0, vt.hp - pb.damage);
@@ -4366,7 +4380,9 @@
         // 16. EVENTOS DE TECLADO, RATÓN Y BOTÓN DE INICIO
         // ============================================================================
         function endExperience(playerWon) {
+            sound.stopJetpack();
             stopAwakeningSoundSequence();
+            speakJarvis(playerWon ? 'victory' : 'death', true);
             gameState.isGameOver = true;
             if (gameOverMesh) {
                 camera.remove(gameOverMesh);
@@ -4408,9 +4424,18 @@
         }
 
         function resetExperience() {
+            sound.stopJetpack();
             stopAwakeningSoundSequence();
             stopJarvisDialogue();
+            jarvisQueue.length = 0;
+            jarvisPlayed.clear();
             jarvisOpeningStarted = false;
+            passwordOpen = false;
+            passwordDigits = '';
+            passwordError = '';
+            passwordMesh.visible = false;
+            passwordOverlay.classList.remove('active');
+            refreshPasswordUI();
             jetpackGuideParticles.visible = true;
             if (gameOverMesh) {
                 camera.remove(gameOverMesh);
@@ -4429,7 +4454,7 @@
             gameState.player.vel.set(0, 0, 0);
             gameState.player.shockImpulse.set(0, 0, 0);
             gameState.player.lastShockTime = -9999;
-            playerDolly.position.set(0, 0, 44);
+            playerDolly.position.set(0, 0, 210);
 
             gameState.boss.hp = 1200;
             gameState.boss.pos.set(0, 0, -235);
@@ -4501,6 +4526,14 @@
         }
 
         window.addEventListener('keydown', (e) => {
+            if (passwordOpen) {
+                if (renderer.xr.isPresenting) {
+                    if (/^Digit[0-9]$/.test(e.code)) inputJetpackDigit(e.code.slice(-1));
+                    else if (e.code === 'Backspace') inputJetpackDigit('BORRAR');
+                    else if (e.code === 'Enter') submitJetpackPassword();
+                }
+                return;
+            }
             keys[e.code] = true;
             if (e.code === 'KeyE') switchWeapon(1);
             if (e.code === 'KeyQ') switchWeapon(-1);
@@ -4511,7 +4544,7 @@
         });
 
         window.addEventListener('wheel', (e) => {
-            if (!gameState.isRunning) return;
+            if (!gameState.isRunning || passwordOpen) return;
             switchWeapon(e.deltaY > 0 ? 1 : -1);
         });
 
@@ -4523,6 +4556,7 @@
         });
 
         window.addEventListener('mousedown', (e) => {
+            if (passwordOpen) return;
             if (e.button === 0) {
                 isMouseDownLeft = true;
                 if (gameState.isGameOver) {
@@ -4590,6 +4624,8 @@
                 updateFootstepArmorTremor(dt);
                 updatePlayerAndJetpack(dt, elapsedTime);
                 updateJetpackGuide(elapsedTime);
+                passwordMesh.visible = passwordOpen && renderer.xr.isPresenting;
+                updateVRPasswordPointer();
                 updateJarvisDialogue();
 
                 if (rightController && rightController.userData.isSelecting) fireWeapon(rightController, rightWeaponMesh);
@@ -4598,6 +4634,7 @@
                 updateColossalUltronAndStorm(dt, elapsedTime);
                 updateStompShockwaves(dt);
                 updateUltronProximityShock(elapsedTime);
+                updateJarvisCombatCues();
                 updateCombatAndParticles(dt, elapsedTime);
                 updateAllHUDs();
             }
