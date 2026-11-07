@@ -4,7 +4,11 @@ Juego WebGL/WebXR en un sitio estático, preparado para **Meta Quest 3**, **Meta
 
 ## Cambios de esta edición
 
-**Selección de equipo antes de iniciar:** en la pantalla inicial se elige entre los equipos **1 y 20** con los botones **− / +**. El enjambre de partículas de Jarvis solo aparece al comenzar la experiencia. Al reiniciar desde un ordenador se vuelve a mostrar el selector; durante una misma sesión inmersiva se conserva el equipo.
+**Pantalla inicial mínima:** muestra exclusivamente **BATALLA FINAL**, **SELECCIONAR EQUIPO** con botones **− / +** y una **flecha hacia abajo** para entrar en la partida/VR. Se retiraron del inicio las instrucciones, leyendas, etiquetas de turbinas y el selector gráfico. El perfil WebXR se decide automáticamente (Quest 3/Quest Pro) y, si se necesita, aún se puede forzar desde la URL usando `?graphics=quest3` o `?graphics=questpro`. La flecha utiliza internamente el inicio de sesión WebXR cuando el navegador lo permite.
+
+**Selección de equipo antes de iniciar:** se elige entre los equipos **1 y 20**. El enjambre de partículas de Jarvis aparece solo después de usar la flecha. Al reiniciar desde un ordenador se vuelve al selector; durante una misma sesión inmersiva se conserva el equipo.
+
+**Enjambre ondulante:** las **160 partículas GPU** ahora forman una trayectoria con amplias ondulaciones laterales y verticales y destellos que avanzan desde el jugador hacia el jetpack. La guía continúa siguiendo la posición del usuario y deja de mostrarse cuando se equipa el jetpack. Se conserva un solo draw call de partículas.
 
 **Armas y turbinas:** cuatro colores de pistola: **amarillo, verde, rojo, azul**. Solo funciona la siguiente relación:
 
