@@ -1,6 +1,6 @@
 # ULTRON — BATALLA FINAL CODEXIA (registro verificado)
 
-Esta edición conserva los **15 MP3**, Jetpack 1122, Jarvis, menú mínimo, enjambre ondulante, tormenta, pisadas, cuatro armas y turbinas, cronómetro y calificación. Corrige el registro de **Batalla final** sin modificar la función de los talleres 1–4.
+Esta edición conserva los **15 MP3**, Jetpack 1122/1111, Jarvis, menú mínimo, enjambre ondulante, tormenta, pisadas, cuatro armas y turbinas, cronómetro y calificación. Corrige el registro de **Batalla final** sin modificar la función de los talleres 1–4.
 
 ## OBLIGATORIO: instalar una función en Supabase
 
@@ -38,7 +38,7 @@ Se verifican localmente sintaxis JavaScript, rutas de archivos, función de env�
 
 ## Atajo para depurar el combate (contraseña 1818)
 
-- **1122**: jetpack normal. Solo daña cada turbina el arma cuyo color corresponde a su debilidad; daño base **28** por disparo.
+- **1122 o 1111**: jetpack normal. Solo daña cada turbina el arma cuyo color corresponde a su debilidad; daño base **28** por disparo.
 - **1818**: jetpack de **depuración**. Cualquiera de los cuatro colores daña cualquiera de las cuatro turbinas con **56 de daño** por disparo (el doble del daño normal de 28). Las turbinas mantienen **900 puntos de vida** cada una. Los orbes enemigos no reciben multiplicación de daño.
 - El efecto empieza al desbloquear el jetpack y se desactiva al reiniciar la partida. No altera los controles ni la duración de la batalla. La pantalla de resultados indica **MODO DEBUG 1818** para identificar las partidas de prueba.
 - **Aviso de clasificación:** este archivo conserva deliberadamente el envío real a CODEXIA también en partidas 1818 para poder diagnosticar la integración con Supabase. **Una nota de prueba puede registrarse como mejor marca de un equipo real.** Usa un equipo de pruebas o elimina/restaura la nota de prueba desde Supabase antes de utilizar los datos en la competición. La función del servidor conserva el máximo.

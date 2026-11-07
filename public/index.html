@@ -855,9 +855,9 @@ class SoundSystem {
         }
         function submitJetpackPassword() {
             if (!passwordOpen) return;
-            if (passwordDigits === '1122' || passwordDigits === '1818') {
+            if (passwordDigits === '1122' || passwordDigits === '1111' || passwordDigits === '1818') {
                 // 1818: cualquier color daña turbinas y duplica sólo su daño.
-                // 1122: modo normal, sin alterar la tabla de debilidades.
+                // 1122 y 1111: modo normal, sin alterar la tabla de debilidades.
                 gameState.debugMode = passwordDigits === '1818';
                 if (gameState.debugMode) console.info('[CODEXIA DEBUG] Jetpack 1818: turbinas vulnerables a cualquier color, daño x2.');
                 passwordOpen = false;
@@ -952,7 +952,7 @@ class SoundSystem {
             team: null,
             hasJetpack: false,
             // Exclusivamente activable con la contraseña 1818 del jetpack.
-            // 1122 mantiene las reglas normales de debilidades y daño.
+            // 1122 y 1111 mantienen las reglas normales de debilidades y daño.
             debugMode: false,
             battle: {
                 startedMs: null, endedMs: null, result: null,
