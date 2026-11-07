@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>ULTRON: COLOSSAL AWAKENING VR - Jetpack & Dual ARC Edition</title>
+    <title>ULTRON: COLOSSAL AWAKENING VR - Quest Visual Optimized Edition</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -177,6 +177,15 @@
                 </div>
             </div>
 
+            <div class="flex flex-col items-center gap-2 mb-4">
+                <label for="visual-quality" class="text-slate-300 text-xs tracking-wider">PERFIL GRÁFICO WEBXR</label>
+                <select id="visual-quality" aria-label="Perfil gráfico del visor" class="bg-slate-900 text-cyan-200 border border-cyan-700 rounded-lg py-2 px-3 text-sm max-w-xs w-full">
+                    <option value="auto">Automático (detección orientativa)</option>
+                    <option value="quest3">Meta Quest 3 — detalle alto</option>
+                    <option value="questpro">Meta Quest Pro — equilibrado</option>
+                </select>
+                <span class="text-slate-400 text-[11px]">Puedes seleccionar manualmente el visor si no se detecta.</span>
+            </div>
             <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
                 <button id="start-btn" class="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-orange-600 via-red-600 to-amber-500 hover:from-orange-500 hover:to-amber-400 text-white font-orbitron font-bold text-sm sm:text-base tracking-widest uppercase rounded-xl shadow-[0_0_35px_rgba(255,69,0,0.65)] transition transform hover:scale-105 active:scale-95 cursor-pointer">
                     INICIAR EXPERIENCIA / ENTER VR
@@ -641,8 +650,23 @@
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 1.55;
-        renderer.shadowMap.enabled = false;
+        renderer.shadowMap.enabled = false; // Sombras de contacto simuladas, sin shadow passes costosos.
         renderer.xr.enabled = true;
+
+        // Los perfiles son presupuestos visuales, no inferencia de soporte WebXR.
+        // La detección UA es solamente orientativa; el usuario puede corregirla en el menú.
+        const qualitySelector = document.getElementById('visual-quality');
+        const presetFromURL = new URLSearchParams(location.search).get('graphics');
+        const headsetHint = /Quest 3(?:\b|\D)/i.test(navigator.userAgent) ? 'quest3' : 'questpro';
+        let selectedVisualMode = ['quest3', 'questpro'].includes(presetFromURL) ? presetFromURL : 'auto';
+        let visualProfile = selectedVisualMode === 'auto' ? headsetHint : selectedVisualMode;
+        qualitySelector.value = selectedVisualMode;
+        const VISUAL_PRESETS = Object.freeze({
+            quest3: { xrScale: 0.98, foveation: 0.4, cloudFraction: 1.0, rainFraction: 1.0, rippleCount: 260 },
+            questpro: { xrScale: 0.85, foveation: 0.65, cloudFraction: 0.72, rainFraction: 0.74, rippleCount: 150 }
+        });
+        // Debe configurarse ANTES de iniciar la sesión; el framebuffer no se cambia en XR.
+        renderer.xr.setFramebufferScaleFactor(VISUAL_PRESETS[visualProfile].xrScale);
 
         // Vectores y objetos reutilizables para evitar Garbage Collection por fotograma
         const _v1 = new THREE.Vector3();
@@ -776,6 +800,11 @@
         // Botón oficial WebXR (VRButton)
         const vrButton = VRButton.createButton(renderer);
         renderer.xr.addEventListener('sessionstart', () => {
+            // El navegador aplica FFR si la característica y el hardware la admiten.
+            if (typeof renderer.xr.setFoveation === 'function') {
+                try { renderer.xr.setFoveation(VISUAL_PRESETS[visualProfile].foveation); }
+                catch (e) { console.warn('Foveación no disponible en esta sesión:',e); }
+            }
             document.body.classList.add('vr-active');
             document.body.classList.add('game-active');
             sound.init();
@@ -872,23 +901,84 @@
         const BOOT_DURATION = 15.0;
         const bootSweepUniform = { value: BOOT_START_Y };
 
+        // Detalle PBR compartido: microarañazos, metal cepillado y rugosidad irregular.
+        // Dos texturas pequeñas, repetidas en UV, evitan geometría y draw calls adicionales.
+        function buildArmorDetailMaps() {
+            const side = 256;
+            const roughCanvas = document.createElement('canvas');
+            const normalCanvas = document.createElement('canvas');
+            roughCanvas.width = roughCanvas.height = normalCanvas.width = normalCanvas.height = side;
+            const roughCtx = roughCanvas.getContext('2d');
+            const normalCtx = normalCanvas.getContext('2d');
+            const roughData = roughCtx.createImageData(side, side);
+            const normalData = normalCtx.createImageData(side, side);
+            const heights = new Float32Array(side * side);
+            const hash = (x, y) => {
+                let h = Math.imul((x + 2048) | 0, 374761393) + Math.imul((y + 2048) | 0, 668265263);
+                h = Math.imul(h ^ (h >>> 13), 1274126177);
+                return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+            };
+            for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
+                const micro = hash(x, y);
+                const brushed = 0.20 * Math.sin(x * 0.44) + 0.11 * Math.sin(x * 1.93);
+                const longScratch = hash((x / 9) | 0, (y / 61) | 0) > 0.925 ? 0.22 : 0;
+                heights[y * side + x] = (micro - 0.5) * 0.22 + brushed + longScratch;
+                const v = Math.round(165 + micro * 62 + brushed * 25 + longScratch * 22);
+                const i = (y * side + x) * 4;
+                roughData.data[i] = roughData.data[i+1] = roughData.data[i+2] = v;
+                roughData.data[i+3] = 255;
+            }
+            for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
+                const xm = (x - 1 + side) % side, xp = (x + 1) % side;
+                const ym = (y - 1 + side) % side, yp = (y + 1) % side;
+                const dx = heights[y * side + xp] - heights[y * side + xm];
+                const dy = heights[yp * side + x] - heights[ym * side + x];
+                const nx = -dx * 0.65, ny = -dy * 0.65, inv = 1 / Math.hypot(nx, ny, 1);
+                const i = (y * side + x) * 4;
+                normalData.data[i] = Math.round((nx * inv * 0.5 + 0.5) * 255);
+                normalData.data[i+1] = Math.round((ny * inv * 0.5 + 0.5) * 255);
+                normalData.data[i+2] = Math.round(inv * 255);
+                normalData.data[i+3] = 255;
+            }
+            roughCtx.putImageData(roughData, 0, 0);
+            normalCtx.putImageData(normalData, 0, 0);
+            const setup = c => {
+                const t = new THREE.CanvasTexture(c);
+                t.wrapS = t.wrapT = THREE.RepeatWrapping;
+                t.repeat.set(5, 5);
+                t.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+                return t;
+            };
+            return { rough: setup(roughCanvas), normal: setup(normalCanvas) };
+        }
+        const armorDetail = buildArmorDetailMaps();
+
         const materials = {
             armorPrimary: new THREE.MeshStandardMaterial({
                 color: 0x1c2129,
                 metalness: 0.91,
-                roughness: 0.24,
+                roughness: 0.33,
+                roughnessMap: armorDetail.rough,
+                normalMap: armorDetail.normal,
+                normalScale: new THREE.Vector2(0.19, 0.19),
                 envMapIntensity: 1.05
             }),
             armorHighlight: new THREE.MeshStandardMaterial({
                 color: 0x313946,
                 metalness: 0.94,
-                roughness: 0.18,
+                roughness: 0.27,
+                roughnessMap: armorDetail.rough,
+                normalMap: armorDetail.normal,
+                normalScale: new THREE.Vector2(0.17, 0.17),
                 envMapIntensity: 1.20
             }),
             crescentSilver: new THREE.MeshStandardMaterial({
                 color: 0x566476,
                 metalness: 0.96,
-                roughness: 0.15,
+                roughness: 0.26,
+                roughnessMap: armorDetail.rough,
+                normalMap: armorDetail.normal,
+                normalScale: new THREE.Vector2(0.13, 0.13),
                 envMapIntensity: 1.35
             }),
             underSuit: new THREE.MeshStandardMaterial({
@@ -968,7 +1058,7 @@
                         float waveActive = smoothstep(-60.0, -15.0, uBootSweepY);
                         float organicWave = (sin(vWorldPosBoot.x * 0.07) * 14.0 + cos(vWorldPosBoot.z * 0.07) * 14.0) * waveActive;
                         float effectiveY = vWorldY + organicWave;
-                        float bootMask = smoothstep(uBootSweepY + 55.0, uBootSweepY - 65.0, effectiveY);
+                        float bootMask = (1.0 - smoothstep(uBootSweepY - 65.0, uBootSweepY + 55.0, effectiveY));
                         float scanFront = exp(-pow((effectiveY - uBootSweepY) * 0.022, 2.0)) * 0.45 * waveActive * step(uBootSweepY, 445.0);
                         totalEmissiveRadiance *= clamp(bootMask + scanFront, 0.0, 2.2);`
                     ).replace(
@@ -976,7 +1066,7 @@
                         `
                         float waveActiveOut = smoothstep(-60.0, -15.0, uBootSweepY);
                         float organicWaveOut = (sin(vWorldPosBoot.x * 0.07) * 14.0 + cos(vWorldPosBoot.z * 0.07) * 14.0) * waveActiveOut;
-                        float whiteLightMask = smoothstep(uBootSweepY + 55.0, uBootSweepY - 70.0, vWorldY + organicWaveOut);
+                        float whiteLightMask = (1.0 - smoothstep(uBootSweepY - 70.0, uBootSweepY + 55.0, vWorldY + organicWaveOut));
                         float distHaze = clamp((vCamDist - 95.0) / 520.0, 0.0, 0.58);
                         float heightHaze = clamp(vWorldY / 420.0, 0.0, 0.42);
                         vec3 stormHazeColor = vec3(0.015, 0.028, 0.052) * whiteLightMask;
@@ -995,7 +1085,7 @@
                         `#include <color_fragment>
                         float waveActiveBasic = smoothstep(-60.0, -15.0, uBootSweepY);
                         float organicWaveBasic = (sin(vWorldPosBoot.x * 0.07) * 12.0 + cos(vWorldPosBoot.z * 0.07) * 12.0) * waveActiveBasic;
-                        float bootMask = smoothstep(uBootSweepY + 48.0, uBootSweepY - 58.0, vWorldY + organicWaveBasic);
+                        float bootMask = (1.0 - smoothstep(uBootSweepY - 58.0, uBootSweepY + 48.0, vWorldY + organicWaveBasic));
                         diffuseColor.rgb *= bootMask;
                         diffuseColor.a *= bootMask;`
                     );
@@ -1919,27 +2009,30 @@
             { start: new THREE.Vector3(-0.22, -0.25, -0.15), end: new THREE.Vector3(0.18, -0.12, -0.35) }
         ];
 
-        // Crea el pool de segmentos para cada arco fractal de la mano (16 segmentos principales + 8 de ramificación)
+        // Un draw call por material en lugar de 120 mallas individuales.
+        const handCoreArcMesh = new THREE.InstancedMesh(handFractalBoltGeo, materials.lightningCore, 72);
+        const handEdgeArcMesh = new THREE.InstancedMesh(handFractalBoltGeo, materials.lightningEdge, 48);
+        handCoreArcMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        handEdgeArcMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        handCoreArcMesh.frustumCulled = handEdgeArcMesh.frustumCulled = false;
+        lightningGroup.add(handCoreArcMesh, handEdgeArcMesh);
+        const arcTransform = new THREE.Object3D();
+        let coreArcSlot = 0, edgeArcSlot = 0;
         for (let a = 0; a < HAND_ARC_ENDPOINTS.length; a++) {
-            const mainSegs = [];
-            const branchSegs = [];
-            const mat = a % 2 === 0 ? materials.lightningCore : materials.lightningEdge;
-            for (let i = 0; i < 16; i++) {
-                const m = new THREE.Mesh(handFractalBoltGeo, mat);
-                lightningGroup.add(m);
-                mainSegs.push(m);
-            }
-            for (let i = 0; i < 8; i++) {
-                const m = new THREE.Mesh(handFractalBoltGeo, mat);
-                lightningGroup.add(m);
-                branchSegs.push(m);
-            }
-            handFractalArcs.push({
-                mainSegs,
-                branchSegs,
-                cfg: HAND_ARC_ENDPOINTS[a],
-                timer: a * 0.02
-            });
+            const core = a % 2 === 0;
+            const mesh = core ? handCoreArcMesh : handEdgeArcMesh;
+            const first = core ? coreArcSlot : edgeArcSlot;
+            if (core) coreArcSlot += 24;
+            else edgeArcSlot += 24;
+            handFractalArcs.push({ mesh, first, cfg: HAND_ARC_ENDPOINTS[a], timer: a * 0.02 });
+        }
+
+        function setArcSegment(mesh, slot, a, b, radius) {
+            arcTransform.position.copy(a);
+            arcTransform.lookAt(b);
+            arcTransform.scale.set(radius, radius, a.distanceTo(b));
+            arcTransform.updateMatrix();
+            mesh.setMatrixAt(slot, arcTransform.matrix);
         }
 
         function rebuildHandFractalArc(arc) {
@@ -1953,21 +2046,11 @@
                 (Math.random() - 0.5) * 0.14,
                 (Math.random() - 0.5) * 0.14
             ));
-
-            // 4 generaciones = 17 puntos (16 segmentos) con el algoritmo de las nubes
             const mainPts = subdivideLightningPath(jitterStart, jitterEnd, 4, 0.095);
             for (let i = 0; i < 16; i++) {
-                const pA = mainPts[i];
-                const pB = mainPts[i + 1];
-                const seg = arc.mainSegs[i];
-                const dist = pA.distanceTo(pB);
-                const r = THREE.MathUtils.lerp(0.011, 0.0045, i / 15);
-                seg.position.copy(pA);
-                seg.lookAt(pB);
-                seg.scale.set(r, r, dist);
+                setArcSegment(arc.mesh, arc.first + i, mainPts[i], mainPts[i+1],
+                    THREE.MathUtils.lerp(0.011, 0.0045, i / 15));
             }
-
-            // Ramificación secundaria (3 generaciones = 9 puntos, 8 segmentos)
             const branchOrigin = mainPts[5 + Math.floor(Math.random() * 5)];
             const branchEnd = branchOrigin.clone().add(new THREE.Vector3(
                 (Math.random() - 0.5) * 0.28,
@@ -1976,15 +2059,10 @@
             ));
             const branchPts = subdivideLightningPath(branchOrigin, branchEnd, 3, 0.045);
             for (let i = 0; i < 8; i++) {
-                const pA = branchPts[i];
-                const pB = branchPts[i + 1];
-                const seg = arc.branchSegs[i];
-                const dist = pA.distanceTo(pB);
-                const r = THREE.MathUtils.lerp(0.0065, 0.002, i / 7);
-                seg.position.copy(pA);
-                seg.lookAt(pB);
-                seg.scale.set(r, r, dist);
+                setArcSegment(arc.mesh, arc.first + 16 + i, branchPts[i], branchPts[i+1],
+                    THREE.MathUtils.lerp(0.0065, 0.002, i / 7));
             }
+            arc.mesh.instanceMatrix.needsUpdate = true;
         }
 
         // ============================================================================
@@ -2232,13 +2310,61 @@
         stormFlashLight.visible = false;
         scene.add(stormFlashLight);
 
-        // Suelo infinito mojado (6000m x 6000m, sin envMap en la oscuridad inicial para no reflejar cuadros del RoomEnvironment)
+        // Suelo con microporos y charcos en mapas tileables (sin SSR ni passes de sombras).
+        function buildWetFloorMaps() {
+            const side = 256;
+            const roughCanvas = document.createElement('canvas');
+            const normalCanvas = document.createElement('canvas');
+            roughCanvas.width = normalCanvas.width = side;
+            roughCanvas.height = normalCanvas.height = side;
+            const rc = roughCanvas.getContext('2d'), nc = normalCanvas.getContext('2d');
+            const rd = rc.createImageData(side, side), nd = nc.createImageData(side, side);
+            const heights = new Float32Array(side * side);
+            const hash = (x, y) => {
+                const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+                return n - Math.floor(n);
+            };
+            for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
+                const i = (y * side + x) * 4;
+                const small = hash(x, y);
+                const waves = Math.sin(x * 0.045 + Math.sin(y * 0.031) * 2.1)
+                    * Math.cos(y * 0.039 - Math.sin(x * 0.034));
+                const pooled = THREE.MathUtils.smoothstep(waves + (small - 0.5) * 0.18, 0.07, 0.43);
+                const rough = Math.round(205 - pooled * 128 + small * 22);
+                rd.data[i] = rd.data[i+1] = rd.data[i+2] = rough;
+                rd.data[i+3] = 255;
+                heights[y * side + x] = (small - 0.5) * 0.2 + (1 - pooled) * 0.09;
+            }
+            for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
+                const i = (y * side + x) * 4;
+                const dx = heights[y*side + (x+1)%side] - heights[y*side+(x+side-1)%side];
+                const dy = heights[((y+1)%side)*side + x] - heights[((y+side-1)%side)*side+x];
+                const nx = -dx*0.45, ny = -dy*0.45, inv=1/Math.hypot(nx,ny,1);
+                nd.data[i] = Math.round((nx*inv*0.5+0.5)*255);
+                nd.data[i+1] = Math.round((ny*inv*0.5+0.5)*255);
+                nd.data[i+2] = Math.round(inv*255);
+                nd.data[i+3] = 255;
+            }
+            rc.putImageData(rd,0,0);nc.putImageData(nd,0,0);
+            const texture = canvas => {
+                const t = new THREE.CanvasTexture(canvas);
+                t.wrapS = t.wrapT = THREE.RepeatWrapping;
+                t.repeat.set(180,180);
+                t.anisotropy = Math.min(2, renderer.capabilities.getMaxAnisotropy());
+                return t;
+            };
+            return { rough: texture(roughCanvas), normal: texture(normalCanvas) };
+        }
+        const wetFloorMaps = buildWetFloorMaps();
         const wetFloor = new THREE.Mesh(
             new THREE.PlaneGeometry(6000, 6000),
             new THREE.MeshStandardMaterial({
-                color: 0x030508,
-                metalness: 0.85,
-                roughness: 0.28,
+                color: 0x0b131b,
+                metalness: 0.52,
+                roughness: 0.54,
+                roughnessMap: wetFloorMaps.rough,
+                normalMap: wetFloorMaps.normal,
+                normalScale: new THREE.Vector2(0.32,0.32),
                 envMapIntensity: 0.0
             })
         );
@@ -2246,45 +2372,106 @@
         wetFloor.position.y = 0.0;
         scene.add(wetFloor);
 
-        // 3 Capas de nubes de tormenta a escala colosal (blending aditivo suave y fog: false para no verse como cuadros oscuros)
+        // Sombras elípticas de contacto: dos planos suaves en vez de shadow maps.
+        // Evita una pasada adicional de renderizado para el coloso de 375 m.
+        function makeContactShadowTexture() {
+            const canvas=document.createElement('canvas');
+            canvas.width=canvas.height=128;
+            const ctx=canvas.getContext('2d');
+            const grad=ctx.createRadialGradient(64,64,3,64,64,62);
+            grad.addColorStop(0,'rgba(0,0,0,0.82)');
+            grad.addColorStop(0.5,'rgba(0,0,0,0.43)');
+            grad.addColorStop(1,'rgba(0,0,0,0)');
+            ctx.fillStyle=grad;ctx.fillRect(0,0,128,128);
+            return new THREE.CanvasTexture(canvas);
+        }
+        const contactShadowTexture=makeContactShadowTexture();
+        const contactShadowMaterial=new THREE.MeshBasicMaterial({
+            map:contactShadowTexture,transparent:true,depthWrite:false,
+            opacity:0.62,polygonOffset:true,polygonOffsetFactor:-1
+        });
+        const contactShadowGeometry=new THREE.PlaneGeometry(66,76);
+        contactShadowGeometry.rotateX(-Math.PI/2);
+        const contactShadows=[-1,1].map(side=>{
+            const mesh=new THREE.Mesh(contactShadowGeometry,contactShadowMaterial);
+            mesh.position.y=0.065;
+            mesh.visible=false;
+            scene.add(mesh);
+            return {mesh,side};
+        });
+        function updateContactShadows() {
+            const active=gameState.ultronAwakening && gameState.boss.defeatState==='NONE';
+            const b=gameState.boss;
+            for (const c of contactShadows) {
+                c.mesh.visible=active;
+                if (!active) continue;
+                const lateral=c.side*38;
+                const yaw=b.facingYaw;
+                c.mesh.position.set(b.pos.x+Math.cos(yaw)*lateral,0.065,
+                    b.pos.z-Math.sin(yaw)*lateral);
+                c.mesh.rotation.y=-yaw;
+            }
+        }
+
+        // Nubes por instancias: tres materiales y tres draw calls (no 48 mallas).
         const sharedCloudPlaneGeo = new THREE.PlaneGeometry(1, 1);
         sharedCloudPlaneGeo.rotateX(-Math.PI / 2);
         const colossalCloudLayers = [];
+        const cloudTransform = new THREE.Object3D();
         [
             { y: 34, count: 14, size: 165, opacity: 0.07 },
             { y: 128, count: 16, size: 260, opacity: 0.09 },
             { y: 265, count: 18, size: 340, opacity: 0.11 }
         ].forEach((layerCfg, lIdx) => {
+            const mat = new THREE.MeshBasicMaterial({
+                map: smokePuffTex,
+                color: 0x3b5878,
+                transparent: true,
+                opacity: 0,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                fog: false,
+                side: THREE.DoubleSide
+            });
+            const mesh = new THREE.InstancedMesh(sharedCloudPlaneGeo, mat, layerCfg.count);
+            mesh.frustumCulled = false;
+            mesh.visible = false;
+            mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            const items = [];
             for (let i = 0; i < layerCfg.count; i++) {
-                const cMat = new THREE.MeshBasicMaterial({
-                    map: smokePuffTex,
-                    color: 0x3b5878,
-                    transparent: true,
-                    opacity: 0.0,
-                    blending: THREE.AdditiveBlending,
-                    depthWrite: false,
-                    fog: false,
-                    side: THREE.DoubleSide
-                });
-                const cPlane = new THREE.Mesh(sharedCloudPlaneGeo, cMat);
-                cPlane.visible = false;
-                cPlane.scale.set(layerCfg.size, 1, layerCfg.size);
-                cPlane.position.set(
-                    (Math.random() - 0.5) * 950,
-                    layerCfg.y + (Math.random() - 0.5) * 16,
-                    -235 + (Math.random() - 0.5) * 650
-                );
-                scene.add(cPlane);
-                colossalCloudLayers.push({
-                    mesh: cPlane,
-                    mat: cMat,
-                    baseX: cPlane.position.x,
-                    baseOpacity: layerCfg.opacity,
-                    speed: (lIdx + 1) * 3.5,
-                    phase: i * 0.9
+                items.push({
+                    x: (Math.random() - 0.5) * 950,
+                    y: layerCfg.y + (Math.random() - 0.5) * 16,
+                    z: -235 + (Math.random() - 0.5) * 650,
+                    size: layerCfg.size * (0.85 + Math.random() * 0.3),
+                    phase: i * 0.9,
+                    speed: (lIdx + 1) * 3.5
                 });
             }
+            scene.add(mesh);
+            colossalCloudLayers.push({mesh, mat, items, baseOpacity:layerCfg.opacity});
         });
+
+        function updateCloudLayers(time, bootStrength, lightningFlash) {
+            for (const cl of colossalCloudLayers) {
+                cl.mat.opacity = cl.baseOpacity * bootStrength + lightningFlash * 0.14;
+                cl.mesh.visible = cl.mat.opacity > 0.005;
+                if (!cl.mesh.visible) continue;
+                for (let i = 0; i < cl.mesh.count; i++) {
+                    const item = cl.items[i];
+                    cloudTransform.position.set(
+                        item.x + Math.sin(time * 0.08 + item.phase) * 35,
+                        item.y,
+                        item.z
+                    );
+                    cloudTransform.scale.set(item.size, 1, item.size);
+                    cloudTransform.rotation.set(0, 0, 0);
+                    cloudTransform.updateMatrix();
+                    cl.mesh.setMatrixAt(i, cloudTransform.matrix);
+                }
+                cl.mesh.instanceMatrix.needsUpdate = true;
+            }
+        }
 
         // TORMENTA DILUVIANA 100% EN GPU (20,000 gotas animadas en el Vertex Shader con cero costo en CPU)
         const rainSystemGroup = new THREE.Group();
@@ -2367,6 +2554,72 @@
         rainSystemGroup.add(createGPURainLayer(13500, 380.0, 240.0, 2.2, 4.6, 68.0, 102.0, -0.22, 0.08, 0x99bbee, 0.36));
         rainSystemGroup.add(createGPURainLayer(6500, 75.0, 55.0, 1.1, 2.3, 52.0, 76.0, -0.10, 0.04, 0xcce4ff, 0.45));
 
+        // Salpicaduras y ondas diminutas cerca del jugador: un solo draw call,
+        // animación íntegramente en el vertex/fragment shader, sin física nueva.
+        const splashCount = 260;
+        const splashGeo = new THREE.BufferGeometry();
+        const splashPositions = new Float32Array(splashCount * 3);
+        const splashSeeds = new Float32Array(splashCount * 4);
+        for (let i = 0; i < splashCount; i++) {
+            splashSeeds[i*4]   = (Math.random() - 0.5) * 76;
+            splashSeeds[i*4+1] = (Math.random() - 0.5) * 76;
+            splashSeeds[i*4+2] = Math.random();
+            splashSeeds[i*4+3] = 6 + Math.random()*8;
+        }
+        splashGeo.setAttribute('position', new THREE.BufferAttribute(splashPositions, 3));
+        splashGeo.setAttribute('aSplash', new THREE.BufferAttribute(splashSeeds, 4));
+        const splashMaterial = new THREE.ShaderMaterial({
+            uniforms: {uTime:rainUniforms.uTime, uCenterPos:rainUniforms.uCenterPos},
+            vertexShader: `
+                uniform float uTime; uniform vec3 uCenterPos;
+                attribute vec4 aSplash; varying float vPhase;
+                void main() {
+                    vPhase = fract(uTime * 0.72 + aSplash.z);
+                    vec3 pos = vec3(uCenterPos.x + aSplash.x, 0.065, uCenterPos.z + aSplash.y);
+                    vec4 mv = modelViewMatrix * vec4(pos,1.0);
+                    gl_PointSize = clamp(aSplash.w * 35.0 / max(1.0,-mv.z), 1.0, 22.0);
+                    gl_Position = projectionMatrix * mv;
+                }`,
+            fragmentShader: `
+                varying float vPhase;
+                void main() {
+                    vec2 p=gl_PointCoord-vec2(0.5);
+                    float radius=length(p)*2.0;
+                    float ring = 1.0-smoothstep(0.055,0.16,abs(radius - (0.18 + 0.7*vPhase)));
+                    float fade = sin(vPhase*3.14159265);
+                    gl_FragColor=vec4(vec3(0.42,0.68,0.85), ring*fade*0.20);
+                    if(gl_FragColor.a < 0.008) discard;
+                }`,
+            transparent:true, depthWrite:false, blending:THREE.AdditiveBlending
+        });
+        const rainSplashes = new THREE.Points(splashGeo, splashMaterial);
+        rainSplashes.frustumCulled = false;
+        rainSplashes.visible = false;
+        scene.add(rainSplashes);
+
+        // Ajustes de densidad visual, sin afectar colisiones ni mecánicas.
+        function applyVisualPreset() {
+            const p = VISUAL_PRESETS[visualProfile];
+            colossalCloudLayers.forEach(cl => {
+                cl.mesh.count = Math.max(4, Math.round(cl.items.length * p.cloudFraction));
+                cl.mesh.instanceMatrix.needsUpdate = true;
+            });
+            rainSystemGroup.children[0].geometry.setDrawRange(0, Math.round(13500 * p.rainFraction) * 2);
+            rainSystemGroup.children[1].geometry.setDrawRange(0, Math.round(6500 * p.rainFraction) * 2);
+            splashGeo.setDrawRange(0, p.rippleCount);
+            if (!renderer.xr.isPresenting) renderer.xr.setFramebufferScaleFactor(p.xrScale);
+            else if (typeof renderer.xr.setFoveation === 'function') {
+                try { renderer.xr.setFoveation(p.foveation); } catch (e) {}
+            }
+        }
+        qualitySelector.addEventListener('change', () => {
+            if (renderer.xr.isPresenting) return; // no cambiar framebuffer durante una sesión.
+            selectedVisualMode = qualitySelector.value;
+            visualProfile = selectedVisualMode === 'auto' ? headsetHint : selectedVisualMode;
+            applyVisualPreset();
+        });
+        applyVisualPreset();
+
         // ALGORITMO FRACTAL DE SUBDIVISIÓN DE PUNTO MEDIO PARA RELÁMPAGOS EN LAS NUBES (Geometría compartida)
         const activeCloudLightnings = [];
         let nextLightningTimer = 2.2;
@@ -2400,21 +2653,21 @@
             return points;
         }
 
-        function buildLightningBranchMesh(pts, radiusStart, radiusEnd, mat) {
-            const grp = new THREE.Group();
-            for (let i = 0; i < pts.length - 1; i++) {
-                const pA = pts[i];
-                const pB = pts[i + 1];
-                const dist = pA.distanceTo(pB);
-                const t = i / (pts.length - 1);
-                const r = THREE.MathUtils.lerp(radiusStart, radiusEnd, t);
-                const segMesh = new THREE.Mesh(sharedLightningSegGeo, mat);
-                segMesh.position.copy(pA);
-                segMesh.lookAt(pB);
-                segMesh.scale.set(r, r, dist);
-                grp.add(segMesh);
+        function disposeCloudLightning(cl) {
+            // Las geometrías cilíndricas compartidas NO se destruyen.
+            cl.mesh.traverse(child => {
+                if (child.isInstancedMesh && typeof child.dispose === 'function') child.dispose();
+            });
+            cl.coreMat.dispose();
+            cl.flashMat.dispose();
+            scene.remove(cl.mesh);
+        }
+
+        function appendLightningSegments(target, pts, radiusStart, radiusEnd) {
+            for (let i=0; i<pts.length-1; i++) {
+                target.push({ a:pts[i], b:pts[i+1],
+                    r:THREE.MathUtils.lerp(radiusStart,radiusEnd,i/(pts.length-1)) });
             }
-            return grp;
         }
 
         function triggerCloudLightning() {
@@ -2437,8 +2690,9 @@
                 depthWrite: false
             });
 
+            const boltSegments = [];
             const mainPts = subdivideLightningPath(startPt, endPt, 5, isCloudToCloud ? 28.0 : 36.0);
-            boltGroup.add(buildLightningBranchMesh(mainPts, 1.35, 0.45, coreMat));
+            appendLightningSegments(boltSegments, mainPts, 1.35, 0.45);
 
             const mainVec = new THREE.Vector3().subVectors(endPt, startPt);
             for (let b = 0; b < 4; b++) {
@@ -2449,8 +2703,20 @@
                     .addScaledVector(mainVec, 0.32 + Math.random() * 0.18)
                     .add(new THREE.Vector3((Math.random() - 0.5) * 95, -25 - Math.random() * 40, (Math.random() - 0.5) * 95));
                 const branchPts = subdivideLightningPath(branchOrigin, branchEnd, 4, 12.0);
-                boltGroup.add(buildLightningBranchMesh(branchPts, 0.65, 0.12, coreMat));
+                appendLightningSegments(boltSegments, branchPts, 0.65, 0.12);
             }
+            const lightningInstances = new THREE.InstancedMesh(sharedLightningSegGeo, coreMat, boltSegments.length);
+            lightningInstances.frustumCulled = false;
+            const lightningTransform = new THREE.Object3D();
+            boltSegments.forEach((seg, i) => {
+                lightningTransform.position.copy(seg.a);
+                lightningTransform.lookAt(seg.b);
+                lightningTransform.scale.set(seg.r, seg.r, seg.a.distanceTo(seg.b));
+                lightningTransform.updateMatrix();
+                lightningInstances.setMatrixAt(i, lightningTransform.matrix);
+            });
+            lightningInstances.instanceMatrix.needsUpdate = true;
+            boltGroup.add(lightningInstances);
 
             const flashMat = new THREE.SpriteMaterial({
                 map: volumetricGlowTex,
@@ -2749,6 +3015,98 @@
         const sharedExpDomeGeo = new THREE.SphereGeometry(4.5, 16, 16);
         const sharedExpRingGeo = new THREE.TorusGeometry(5.5, 0.85, 10, 36);
 
+        // Humo de turbinas agrupado: una llamada de dibujo y un pool reutilizable.
+        // InstancedBufferAttribute permite opacidad individual sin clonar materiales.
+        const MAX_SMOKE = 192;
+        const smokeGeometry = new THREE.PlaneGeometry(1,1);
+        const smokeOpacity = new THREE.InstancedBufferAttribute(new Float32Array(MAX_SMOKE),1);
+        smokeOpacity.setUsage(THREE.DynamicDrawUsage);
+        smokeGeometry.setAttribute('instanceOpacity',smokeOpacity);
+        const smokeInstancedMaterial = new THREE.MeshBasicMaterial({
+            map:smokePuffTex, color:0xffffff, transparent:true,
+            depthWrite:false, side:THREE.DoubleSide, fog:true, opacity:0.83
+        });
+        smokeInstancedMaterial.onBeforeCompile = shader => {
+            shader.vertexShader = 'attribute float instanceOpacity; varying float vSmokeOpacity;\n'
+                + shader.vertexShader.replace('#include <begin_vertex>',
+                    '#include <begin_vertex>\n vSmokeOpacity = instanceOpacity;');
+            shader.fragmentShader = 'varying float vSmokeOpacity;\n'
+                + shader.fragmentShader.replace('#include <color_fragment>',
+                    '#include <color_fragment>\n diffuseColor.a *= vSmokeOpacity;');
+        };
+        smokeInstancedMaterial.customProgramCacheKey = ()=>'ultron-smoke-instanced-v1';
+        const smokeMesh = new THREE.InstancedMesh(smokeGeometry,smokeInstancedMaterial,MAX_SMOKE);
+        smokeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        smokeMesh.frustumCulled = false;
+        smokeMesh.renderOrder = 6;
+        scene.add(smokeMesh);
+        const smokePool = Array.from({length:MAX_SMOKE},() => ({
+            active:false, pos:new THREE.Vector3(), vel:new THREE.Vector3(),
+            life:0, maxLife:1, size:1, fire:false, baseColor:new THREE.Color()
+        }));
+        const smokeDummy = new THREE.Object3D();
+        const smokeColorTmp = new THREE.Color();
+        const smokeFadeColor = new THREE.Color(0x14161d);
+        let smokeCursor=0;
+        for (let i=0;i<MAX_SMOKE;i++) {
+            smokeDummy.scale.setScalar(0);
+            smokeDummy.updateMatrix();
+            smokeMesh.setMatrixAt(i,smokeDummy.matrix);
+            smokeMesh.setColorAt(i,smokeFadeColor);
+        }
+        smokeMesh.instanceMatrix.needsUpdate=true;
+        if (smokeMesh.instanceColor) smokeMesh.instanceColor.needsUpdate=true;
+
+        function spawnSmokeVFX(pos, vel, size, life, fire=false, color=0x1a1d24) {
+            const i=smokeCursor;
+            smokeCursor=(smokeCursor+1)%MAX_SMOKE;
+            const s=smokePool[i];
+            s.active=true;
+            s.pos.copy(pos);
+            s.vel.copy(vel);
+            s.size=size;
+            s.maxLife=s.life=life;
+            s.fire=fire;
+            s.baseColor.setHex(color);
+        }
+        function updateSmokeVFX(dt) {
+            // Para billboards en espacio mundo usamos la cámara actual; sin geometría por puff.
+            camera.getWorldQuaternion(smokeDummy.quaternion);
+            for (let i=0;i<MAX_SMOKE;i++) {
+                const p=smokePool[i];
+                if (p.active) {
+                    p.life-=dt;
+                    if (p.life<=0) p.active=false;
+                }
+                if (p.active) {
+                    const t=1-p.life/p.maxLife;
+                    p.pos.addScaledVector(p.vel,dt);
+                    p.vel.multiplyScalar(Math.exp(-2.2*dt));
+                    smokeDummy.position.copy(p.pos);
+                    const sz=p.size*(1+t*0.75);
+                    smokeDummy.scale.set(sz,sz,1);
+                    smokeOpacity.setX(i, Math.max(0, (1-t)*0.70));
+                    smokeColorTmp.copy(p.baseColor);
+                    if (p.fire) smokeColorTmp.lerp(smokeFadeColor,THREE.MathUtils.smoothstep(t,0.05,0.5));
+                    smokeMesh.setColorAt(i,smokeColorTmp);
+                } else {
+                    smokeDummy.position.set(0,-9999,0);
+                    smokeDummy.scale.setScalar(0);
+                    smokeOpacity.setX(i,0);
+                }
+                smokeDummy.updateMatrix();
+                smokeMesh.setMatrixAt(i,smokeDummy.matrix);
+            }
+            smokeMesh.instanceMatrix.needsUpdate=true;
+            smokeOpacity.needsUpdate=true;
+            if (smokeMesh.instanceColor) smokeMesh.instanceColor.needsUpdate=true;
+        }
+        function clearSmokeVFX() {
+            for (const p of smokePool) p.active=false;
+            smokeCursor=0;
+            updateSmokeVFX(0);
+        }
+
         const MAX_PARTICLES = 450;
         const sparkInstancedMesh = new THREE.InstancedMesh(
             new THREE.OctahedronGeometry(0.45, 0),
@@ -2804,26 +3162,20 @@
             const shockwaveRing = new THREE.Mesh(sharedExpRingGeo, ringMat);
             expGroup.add(shockwaveRing);
 
-            const smokeBillows = [];
-            for (let i = 0; i < 18; i++) {
-                const bMat = new THREE.SpriteMaterial({
-                    map: smokePuffTex,
-                    color: i < 6 ? 0xff7700 : 0x1a1d24,
-                    transparent: true,
-                    opacity: 0.92,
-                    depthWrite: false
-                });
-                const bSprite = new THREE.Sprite(bMat);
-                const s = 12 + Math.random() * 18;
-                bSprite.scale.set(s, s, 1);
-                bSprite.position.set((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8);
-                expGroup.add(bSprite);
-                smokeBillows.push({
-                    sprite: bSprite,
-                    mat: bMat,
-                    vel: new THREE.Vector3((Math.random() - 0.5) * 28, 16 + Math.random() * 32, (Math.random() - 0.5) * 28),
-                    initFire: i < 6
-                });
+            // La nube se dibuja mediante el pool instanciado, no 18 SpriteMaterials.
+            for (let i=0;i<18;i++) {
+                const local = new THREE.Vector3(
+                    (Math.random()-0.5)*8,
+                    (Math.random()-0.5)*8,
+                    (Math.random()-0.5)*8
+                ).add(worldPos);
+                const vel = new THREE.Vector3(
+                    (Math.random()-0.5)*28,
+                    16+Math.random()*32,
+                    (Math.random()-0.5)*28
+                );
+                spawnSmokeVFX(local,vel,12+Math.random()*18,2.8,i<6,
+                    i<6 ? 0xff7700 : 0x1a1d24);
             }
 
             activeTurbineExplosions.push({
@@ -2832,7 +3184,6 @@
                 domeMat,
                 shockwaveRing,
                 ringMat,
-                smokeBillows,
                 age: 0,
                 maxAge: 2.8
             });
@@ -2840,85 +3191,47 @@
             if (turbineObj) {
                 persistentSmokePlumes.push({
                     turbineGroup: turbineObj.group,
-                    puffs: [],
                     spawnTimer: 0
                 });
             }
         }
 
         function updateTurbineExplosionsAndSmoke(dt) {
-            for (let i = activeTurbineExplosions.length - 1; i >= 0; i--) {
-                const ex = activeTurbineExplosions[i];
-                ex.age += dt;
-                const t = ex.age / ex.maxAge;
-                if (t >= 1.0) {
+            for (let i=activeTurbineExplosions.length-1;i>=0;i--) {
+                const ex=activeTurbineExplosions[i];
+                ex.age+=dt;
+                const t=ex.age/ex.maxAge;
+                if (t>=1.0) {
                     ex.domeMat.dispose();
                     ex.ringMat.dispose();
-                    ex.smokeBillows.forEach(b => b.mat.dispose());
                     scene.remove(ex.group);
-                    activeTurbineExplosions.splice(i, 1);
+                    activeTurbineExplosions.splice(i,1);
                     continue;
                 }
-                ex.plasmaDome.scale.setScalar(1.0 + t * 9.5);
-                ex.domeMat.opacity = Math.max(0, 1.0 - t * 2.8);
-                ex.shockwaveRing.scale.setScalar(1.0 + t * 14.0);
-                ex.ringMat.opacity = Math.max(0, 1.0 - t * 1.6);
-
-                ex.smokeBillows.forEach(b => {
-                    b.sprite.position.addScaledVector(b.vel, dt);
-                    b.vel.multiplyScalar(0.96);
-                    b.sprite.scale.multiplyScalar(1.0 + dt * 0.45);
-                    if (b.initFire && t > 0.25) {
-                        b.mat.color.lerp(_darkSmokeColor, dt * 5.0);
-                    }
-                    b.mat.opacity = Math.max(0, (1.0 - t) * 0.85);
-                });
+                ex.plasmaDome.scale.setScalar(1+t*9.5);
+                ex.domeMat.opacity=Math.max(0,1-t*2.8);
+                ex.shockwaveRing.scale.setScalar(1+t*14);
+                ex.ringMat.opacity=Math.max(0,1-t*1.6);
             }
-
-            persistentSmokePlumes.forEach(plume => {
-                plume.spawnTimer += dt;
-                if (plume.spawnTimer >= 0.18) {
-                    plume.spawnTimer = 0;
+            // Las columnas se mantienen vinculadas a las turbinas destruidas.
+            // El pooling evita generar y destruir SpriteMaterials continuamente.
+            persistentSmokePlumes.forEach(plume=>{
+                plume.spawnTimer+=dt;
+                if (plume.spawnTimer>=0.22) {
+                    plume.spawnTimer=0;
                     plume.turbineGroup.getWorldPosition(_v1);
-                    const sMat = new THREE.SpriteMaterial({
-                        map: smokePuffTex,
-                        color: Math.random() < 0.2 ? 0xff5500 : 0x181b22,
-                        transparent: true,
-                        opacity: 0.72,
-                        depthWrite: false
-                    });
-                    const sSprite = new THREE.Sprite(sMat);
-                    sSprite.position.set(
-                        _v1.x + (Math.random() - 0.5) * 4,
-                        _v1.y + (Math.random() - 0.5) * 4,
-                        _v1.z + (Math.random() - 0.5) * 4
+                    spawnSmokeVFX(
+                        new THREE.Vector3(_v1.x+(Math.random()-0.5)*4,
+                            _v1.y+(Math.random()-0.5)*4,
+                            _v1.z+(Math.random()-0.5)*4),
+                        new THREE.Vector3((Math.random()-0.5)*8,
+                            18+Math.random()*14,(Math.random()-0.5)*8),
+                        14,3.0,false,
+                        Math.random()<0.2 ? 0x92421b : 0x181b22
                     );
-                    sSprite.scale.set(14, 14, 1);
-                    scene.add(sSprite);
-                    plume.puffs.push({
-                        sprite: sSprite,
-                        mat: sMat,
-                        vel: new THREE.Vector3((Math.random() - 0.5) * 8, 18 + Math.random() * 14, (Math.random() - 0.5) * 8),
-                        age: 0,
-                        maxAge: 3.0
-                    });
-                }
-
-                for (let j = plume.puffs.length - 1; j >= 0; j--) {
-                    const pf = plume.puffs[j];
-                    pf.age += dt;
-                    if (pf.age >= pf.maxAge) {
-                        pf.mat.dispose();
-                        scene.remove(pf.sprite);
-                        plume.puffs.splice(j, 1);
-                        continue;
-                    }
-                    pf.sprite.position.addScaledVector(pf.vel, dt);
-                    pf.sprite.scale.multiplyScalar(1.0 + dt * 0.38);
-                    pf.mat.color.lerp(_darkSmokeColor, dt * 3.5);
-                    pf.mat.opacity = (1.0 - pf.age / pf.maxAge) * 0.68;
                 }
             });
+            updateSmokeVFX(dt);
         }
 
         function fireWeapon(ctrl, wpnMesh) {
@@ -3148,6 +3461,7 @@
             const b = gameState.boss;
 
             // Actualizar uniforms de lluvia en GPU (Cero iteraciones en CPU)
+            rainSplashes.visible = gameState.hasJetpack;
             rainUniforms.uTime.value = elapsedTime;
             rainUniforms.uCenterPos.value.copy(playerDolly.position);
 
@@ -3165,9 +3479,7 @@
                 const cl = activeCloudLightnings[i];
                 cl.age += dt;
                 if (cl.age >= cl.maxAge) {
-                    cl.coreMat.dispose();
-                    cl.flashMat.dispose();
-                    scene.remove(cl.mesh);
+                    disposeCloudLightning(cl);
                     activeCloudLightnings.splice(i, 1);
                     continue;
                 }
@@ -3230,11 +3542,7 @@
 
                 wetFloor.material.envMapIntensity = 0.22 * easedBoot;
 
-                colossalCloudLayers.forEach(cl => {
-                    cl.mat.opacity = cl.baseOpacity * easedBoot + activeLightningFlash * 0.14;
-                    cl.mesh.visible = cl.mat.opacity > 0.005;
-                    cl.mesh.position.x = cl.baseX + Math.sin(elapsedTime * 0.08 + cl.phase) * 35;
-                });
+                updateCloudLayers(elapsedTime, easedBoot, activeLightningFlash);
 
                 animatedTurbines.forEach((rotor, idx) => {
                     rotor.rotation.z -= dt * (3.2 + idx * 0.5) * easedBoot;
@@ -3257,11 +3565,7 @@
                 sound.playUltronVoiceChord();
             }
 
-            colossalCloudLayers.forEach(cl => {
-                cl.mat.opacity = cl.baseOpacity + activeLightningFlash * 0.16;
-                cl.mesh.visible = cl.mat.opacity > 0.005;
-                cl.mesh.position.x = cl.baseX + Math.sin(elapsedTime * 0.08 + cl.phase) * 35;
-            });
+            updateCloudLayers(elapsedTime, 1.0, activeLightningFlash);
 
             // FASE 3: CINEMÁTICA DE DERROTA (SE HINCA LENTAMENTE, CAE CON REBOTE PESADO Y SE APAGA)
             if (b.defeatState !== 'NONE') {
@@ -3713,6 +4017,9 @@
             gameState.isGameOver = true;
             if (gameOverMesh) {
                 camera.remove(gameOverMesh);
+                gameOverMesh.material.map.dispose();
+                gameOverMesh.material.dispose();
+                gameOverMesh.geometry.dispose();
                 gameOverMesh = null;
             }
             const endCanvas = document.createElement('canvas');
@@ -3750,6 +4057,9 @@
         function resetExperience() {
             if (gameOverMesh) {
                 camera.remove(gameOverMesh);
+                gameOverMesh.material.map.dispose();
+                gameOverMesh.material.dispose();
+                gameOverMesh.geometry.dispose();
                 gameOverMesh = null;
             }
             gameState.isGameOver = false;
@@ -3781,6 +4091,18 @@
             jpPointLight.visible = true;
             lightningGroup.visible = true;
             wetFloor.material.envMapIntensity = 0.0;
+            rainSplashes.visible = false;
+            // Limpiar exclusivamente VFX de la partida anterior.
+            persistentSmokePlumes.length = 0;
+            clearSmokeVFX();
+            activeTurbineExplosions.forEach(ex => {
+                ex.domeMat.dispose();ex.ringMat.dispose();scene.remove(ex.group);
+            });
+            activeTurbineExplosions.length = 0;
+            activeCloudLightnings.forEach(disposeCloudLightning);
+            activeCloudLightnings.length = 0;
+            nextLightningTimer = 2.2;
+            contactShadows.forEach(c=>c.mesh.visible=false);
 
             materials.emissiveCore.emissiveIntensity = 2.2;
             materials.emissiveDeep.emissiveIntensity = 1.4;
@@ -3873,6 +4195,17 @@
         // ============================================================================
         // 17. BUCLE PRINCIPAL WEBXR (`renderer.setAnimationLoop`)
         // ============================================================================
+        const debugVisual = new URLSearchParams(location.search).has('debug');
+        let debugEl = null;
+        if (debugVisual) {
+            debugEl=document.createElement('div');
+            Object.assign(debugEl.style, {
+                position:'fixed',bottom:'12px',left:'12px',background:'#08111ddd',
+                color:'#c6f5ff',font:'12px monospace',padding:'8px',zIndex:'999',
+                pointerEvents:'none'
+            });
+            document.body.appendChild(debugEl);
+        }
         renderer.setAnimationLoop(() => {
             const nowPerf = performance.now();
             fpsFrameCount++;
@@ -3896,7 +4229,12 @@
                 updateAllHUDs();
             }
 
+            if (gameState.isRunning) updateContactShadows();
             renderer.render(scene, camera);
+            if (debugEl && fpsFrameCount === 0) {
+                const stats=renderer.info.render;
+                debugEl.textContent=`${visualProfile.toUpperCase()} | ${currentFps} FPS | ${stats.calls} draw calls | ${stats.triangles} tris | ${stats.points} points`;
+            }
         });
     </script>
 </body>
