@@ -2,6 +2,10 @@
 -- NO REEMPLAZA registrar_taller: talleres 1, 2, 3 y 4 permanecen intactos.
 -- No contiene notas de ejemplo ni modifica las ya almacenadas.
 -- El valor retornado es el valor realmente guardado en scores.batalla_final.
+-- Si existe la sobrecarga (integer, integer) detectada en Supabase, se
+-- elimina para evitar la ambiguedad PGRST203; NO cambia datos de scores.
+
+DROP FUNCTION IF EXISTS public.registrar_batalla_final(integer, integer);
 
 CREATE OR REPLACE FUNCTION public.registrar_batalla_final(
     p_equipo integer,
@@ -80,3 +84,6 @@ SELECT
     pg_catalog.has_function_privilege(
         'anon', 'public.registrar_batalla_final(integer,numeric)', 'EXECUTE'
     ) AS anon_puede_registrar_batalla_final;
+
+-- Refrescar el cache de la API PostgREST tras eliminar la sobrecarga.
+NOTIFY pgrst, 'reload schema';

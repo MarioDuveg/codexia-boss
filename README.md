@@ -35,3 +35,15 @@ Se verifican localmente sintaxis JavaScript, rutas de archivos, función de env�
 - Portada simplificada: el botón de inicio muestra **ENTER** en lugar de la flecha. La acción de entrada a WebXR permanece igual.
 - Barra de vida y cronómetro subidos ligeramente: 12–16 px en la interfaz de escritorio y 6 cm en el panel 3D del visor.
 - Se mantiene el registro de Batalla Final CODEXIA, el selector de equipo y todos los archivos MP3 originales.
+
+## Atajo para depurar el combate (contraseña 1818)
+
+- **1122**: jetpack normal. Solo daña cada turbina el arma cuyo color corresponde a su debilidad; daño base **28** por disparo.
+- **1818**: jetpack de **depuración**. Cualquiera de los cuatro colores daña cualquiera de las cuatro turbinas con **56 de daño** por disparo (el doble del daño normal de 28). Las turbinas mantienen **900 puntos de vida** cada una. Los orbes enemigos no reciben multiplicación de daño.
+- El efecto empieza al desbloquear el jetpack y se desactiva al reiniciar la partida. No altera los controles ni la duración de la batalla. La pantalla de resultados indica **MODO DEBUG 1818** para identificar las partidas de prueba.
+- **Aviso de clasificación:** este archivo conserva deliberadamente el envío real a CODEXIA también en partidas 1818 para poder diagnosticar la integración con Supabase. **Una nota de prueba puede registrarse como mejor marca de un equipo real.** Usa un equipo de pruebas o elimina/restaura la nota de prueba desde Supabase antes de utilizar los datos en la competición. La función del servidor conserva el máximo.
+- Si el RPC sigue teniendo sobrecarga `(integer, integer)` y `(integer, numeric)`, antes de medir la integración ejecuta la corrección SQL indicada en la conversación, conservando solo la firma `(integer, numeric)`. El juego no puede corregir esa configuración por sí mismo.
+
+## Corrección de funciones duplicadas en Supabase
+
+Si el editor SQL muestra las dos firmas `registrar_batalla_final(integer, integer)` y `registrar_batalla_final(integer, numeric)`, ejecuta el archivo `SQL/01_REGISTRAR_BATALLA_FINAL.sql` actualizado. Ahora elimina solo la sobrecarga de enteros, conserva o actualiza la función `numeric` y ordena recargar el esquema PostgREST; no edita las calificaciones. No es posible ejecutar este cambio desde GitHub/Render.

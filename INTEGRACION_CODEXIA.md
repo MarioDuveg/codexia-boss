@@ -27,3 +27,9 @@ SELECT pg_catalog.has_function_privilege(
 ```
 
 Tras una partida **real**, verifica en el Table Editor que `public.scores` haya actualizado la fila del equipo escogido y que `total` refleje la suma. El resultado antiguo (si no quedó registrado) no puede deducirse de la captura; para recuperarlo necesitas conocer su equipo y su nota legítima.
+
+## Pruebas de registro con contraseña 1818
+
+La contraseña **1818** acelera el combate (cualquier color afecta las turbinas y se aplica daño x2) para probar el flujo de envío. El juego **sí publica el resultado** del modo de depuración en el mismo endpoint de `batalla_final`. No realices pruebas con un equipo cuyo puntaje oficial quieras preservar: Supabase mantiene la mayor calificación. La pantalla de resultados muestra el estado de envío y la etiqueta `MODO DEBUG 1818`.
+
+La actualización SQL incluida elimina la sobrecarga duplicada `(integer, integer)` del RPC y recarga el esquema (sin alterar notas).
