@@ -1,0 +1,3903 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>ULTRON: COLOSSAL AWAKENING VR - Jetpack & Dual ARC Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        * {
+            user-select: none;
+            -webkit-user-select: none;
+            box-sizing: border-box;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #030509;
+            font-family: 'Share Tech Mono', monospace;
+            color: #00f3ff;
+        }
+        #game-container {
+            position: absolute;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+        canvas#game-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        .font-orbitron {
+            font-family: 'Orbitron', sans-serif;
+        }
+        .visor-overlay {
+            background:
+                radial-gradient(circle at center, transparent 58%, rgba(5, 8, 16, 0.85) 100%),
+                repeating-linear-gradient(0deg, rgba(0, 243, 255, 0.022) 0px, rgba(0, 243, 255, 0.022) 1px, transparent 1px, transparent 3px);
+            pointer-events: none;
+            will-change: transform;
+        }
+        .visor-frame {
+            border: 2px solid rgba(0, 243, 255, 0.2);
+            box-shadow: inset 0 0 60px rgba(0, 243, 255, 0.08), inset 0 0 25px rgba(255, 69, 0, 0.12);
+            border-radius: 36px;
+        }
+        .hud-glow-cyan {
+            text-shadow: 0 0 8px rgba(0, 243, 255, 0.8), 0 0 16px rgba(0, 243, 255, 0.4);
+        }
+        .hud-glow-orange {
+            text-shadow: 0 0 10px rgba(255, 85, 0, 0.95), 0 0 22px rgba(255, 30, 0, 0.6);
+        }
+        @keyframes pulse-fast {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.35; }
+        }
+        .animate-warning {
+            animation: pulse-fast 0.38s infinite;
+        }
+        .damage-flash {
+            transition: opacity 0.15s ease-out;
+        }
+        body.game-active #menu-modal {
+            display: none !important;
+        }
+        body.vr-active #hud {
+            display: none !important;
+        }
+    </style>
+
+    <!-- Import Map para Three.js y WebXR -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body class="relative w-full h-full overflow-hidden">
+
+    <!-- Contenedor WebGL / WebXR -->
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+    </div>
+
+    <!-- Flash de daño en pantalla -->
+    <div id="damage-overlay" class="fixed inset-0 pointer-events-none opacity-0 damage-flash z-10"
+         style="background: radial-gradient(circle, transparent 30%, rgba(255, 35, 0, 0.68) 100%);"></div>
+
+    <!-- Flash de encendido del Jetpack -->
+    <div id="jetpack-pickup-overlay" class="fixed inset-0 pointer-events-none opacity-0 transition-opacity duration-700 z-10"
+         style="background: radial-gradient(circle, rgba(0, 243, 255, 0.35) 0%, rgba(255, 85, 0, 0.25) 60%, transparent 100%); mix-blend-mode: screen;"></div>
+
+    <!-- HUD MINIMALISTA (La vida verde aparece desde el inicio; Mecha Ultron aparece cuando empieza a caminar) -->
+    <div id="hud" class="fixed inset-0 pointer-events-none z-20 flex flex-col items-center justify-start pt-6 sm:pt-8 px-4">
+        <div id="hud-bars-container" class="w-full max-w-lg flex flex-col items-center space-y-2">
+            <!-- Barra Roja Principal: Mecha Ultron (Oculta hasta que termina de encenderse y camina) -->
+            <div id="boss-bar-wrapper" class="w-full flex flex-col items-center opacity-0 transition-opacity duration-700">
+                <span class="font-orbitron font-bold text-xs sm:text-sm tracking-widest text-red-400 uppercase mb-1 drop-shadow-[0_0_8px_rgba(239,68,68,0.8)]">
+                    Mecha Ultron
+                </span>
+                <div class="w-full h-4 bg-red-950/80 border border-red-500/80 rounded overflow-hidden p-0.5 shadow-[0_0_15px_rgba(239,68,68,0.4)]">
+                    <div id="boss-hp-bar" class="h-full bg-gradient-to-r from-red-700 via-red-500 to-red-400 transition-all duration-100" style="width: 100%;"></div>
+                </div>
+            </div>
+
+            <!-- Barra Verde más chica abajo: Vida del Jugador (Visible desde el inicio) -->
+            <div class="w-3/5 h-2.5 bg-emerald-950/80 border border-emerald-500/80 rounded overflow-hidden p-0.5 shadow-[0_0_12px_rgba(16,185,129,0.35)]">
+                <div id="player-hp-bar" class="h-full bg-gradient-to-r from-emerald-600 to-green-400 transition-all duration-150" style="width: 100%;"></div>
+            </div>
+
+            <!-- Indicador de FPS en medio -->
+            <div id="fps-counter" class="font-orbitron font-bold text-xs sm:text-sm tracking-widest text-cyan-300 drop-shadow-[0_0_8px_rgba(0,243,255,0.85)] pt-1">
+                FPS: --
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DE INICIO (Pre-VR y PC) -->
+    <div id="menu-modal" class="fixed inset-0 z-30 flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
+        <div class="max-w-2xl w-full bg-gradient-to-b from-slate-950 via-neutral-950 to-orange-950/40 border-2 border-orange-500/70 rounded-2xl p-6 sm:p-8 shadow-[0_0_80px_rgba(255,69,0,0.35)] text-center relative overflow-hidden">
+            <div class="w-full h-1 bg-gradient-to-r from-transparent via-orange-500 to-transparent mb-4"></div>
+
+            <div class="inline-block px-3 py-1 rounded-full bg-orange-950/90 border border-orange-500/50 text-orange-300 text-xs tracking-widest uppercase mb-2">
+                OSCURIDAD TOTAL // JETPACK LIBRE // COLOSO TITÁNICO ESCALA 50.0 (375M)
+            </div>
+
+            <h1 class="font-orbitron text-2xl sm:text-4xl font-black text-white tracking-wider hud-glow-orange mb-2">
+                ULTRON: COLOSSAL AWAKENING VR
+            </h1>
+            <p class="text-slate-300 text-xs sm:text-sm mb-4 max-w-xl mx-auto leading-relaxed">
+                En medio de la oscuridad absoluta bajo la lluvia, toma el <strong>Jetpack brillante en el centro</strong>. Verás cómo poco a poco se enciende desde los pies hasta la cabeza el colosal <strong>Ultron Prestige MK-X (Escala 50.0 / 375m)</strong> con sobrecarga de energía, y al encenderse por completo comenzará a caminar hacia ti. Destruye sus <strong>4 Turbinas de colores</strong> para hacerlas estallar en fuego y humo.
+            </p>
+
+            <!-- Leyenda de las 4 Turbinas Vulnerables -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4 text-[11px]">
+                <div class="px-2 py-1.5 rounded bg-black/80 border border-green-500 text-green-400 font-bold">
+                    Hombro Izq: ARC-INT (Verde)
+                </div>
+                <div class="px-2 py-1.5 rounded bg-black/80 border border-cyan-400 text-cyan-300 font-bold">
+                    Hombro Der: ARC-FLOAT (Cian)
+                </div>
+                <div class="px-2 py-1.5 rounded bg-black/80 border border-yellow-400 text-yellow-300 font-bold">
+                    Cadera Izq: ARC-STRING (Amarillo)
+                </div>
+                <div class="px-2 py-1.5 rounded bg-black/80 border border-purple-500 text-purple-400 font-bold">
+                    Cadera Der: ARC-BOOL (Morado)
+                </div>
+            </div>
+
+            <!-- Controles VR y PC -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-left bg-black/65 border border-orange-500/30 rounded-xl p-4 mb-5 text-xs">
+                <div class="flex items-center space-x-3">
+                    <span class="px-2.5 py-1 bg-amber-950 border border-amber-400/70 text-amber-300 font-bold rounded shrink-0">GRIP IZQ VR</span>
+                    <span class="text-zinc-300">Mantén presionado para impulsarte hacia arriba con el Jetpack (Suelta para caer)</span>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <span class="px-2.5 py-1 bg-cyan-950 border border-cyan-400/70 text-cyan-300 font-bold rounded shrink-0">PALANCA IZQ</span>
+                    <span class="text-zinc-300">Moverte libremente sin límites en el aire y suelo (Adelante, Atrás, Izq, Der)</span>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <span class="px-2.5 py-1 bg-red-950 border border-red-500/70 text-red-300 font-bold rounded shrink-0">GATILLOS VR</span>
+                    <span class="text-zinc-300">Disparar a las 4 Turbinas y a los orbes perseguidores que Ultron carga en su mano</span>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <span class="px-2.5 py-1 bg-green-950 border border-green-500/70 text-green-300 font-bold rounded shrink-0">STICK DER VR</span>
+                    <span class="text-zinc-300">Cambiar entre los 4 colores ARC (En PC: WASD + Espacio + Click + Q/E)</span>
+                </div>
+            </div>
+
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+                <button id="start-btn" class="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-orange-600 via-red-600 to-amber-500 hover:from-orange-500 hover:to-amber-400 text-white font-orbitron font-bold text-sm sm:text-base tracking-widest uppercase rounded-xl shadow-[0_0_35px_rgba(255,69,0,0.65)] transition transform hover:scale-105 active:scale-95 cursor-pointer">
+                    INICIAR EXPERIENCIA / ENTER VR
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { VRButton } from 'three/addons/webxr/VRButton.js';
+        import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+        // ============================================================================
+        // 1. CONFIGURACIÓN DE COLORES ARC, HÁPTICA WEBXR Y SONIDOS MP3
+        // ============================================================================
+        const weaponColors = {
+            int: 0x00ff00,    // Verde
+            float: 0x00ffff,  // Cian
+            string: 0xffff00, // Amarillo
+            bool: 0xaa00ff    // Morado
+        };
+        const weaponNames = {
+            int: 'ARC-INT (VERDE)',
+            float: 'ARC-FLOAT (CIAN)',
+            string: 'ARC-STRING (AMARILLO)',
+            bool: 'ARC-BOOL (MORADO)'
+        };
+        const unlockedWeapons = ['int', 'float', 'string', 'bool'];
+        let currentWeaponIndex = 0;
+        let weaponSwitchCooldown = 0;
+        let rightStickWeaponAxisWasActive = false;
+
+        const SHOT_AUDIO_URL = 'https://raw.githubusercontent.com/MarioDuran/VariableOverload/main/shot.mp3';
+        const SOUNDTRACK_AUDIO_URL = 'https://raw.githubusercontent.com/MarioDuran/VariableOverload/main/Siege_of_the_Colossus.mp3';
+        const BOSS_CHARGE_AUDIO_URL = 'https://raw.githubusercontent.com/MarioDuran/VariableOverload/main/power-beam-sound-effect.mp3';
+        const BOSS_SHOOT_AUDIO_URL = 'https://raw.githubusercontent.com/MarioDuran/VariableOverload/main/ice-beam-fire-sound-effect.mp3';
+
+        const soundCache = new Map();
+        function playSoundResource(url, volume = 1.0) {
+            if (!soundCache.has(url)) {
+                const base = new Audio(url);
+                base.crossOrigin = 'anonymous';
+                base.preload = 'auto';
+                base.load();
+                soundCache.set(url, base);
+            }
+            const audio = soundCache.get(url).cloneNode(true);
+            audio.crossOrigin = 'anonymous';
+            audio.volume = volume;
+            audio.play().catch(() => {});
+        }
+
+        function triggerControllerHaptics(handedness = 'both', intensity = 0.5, durationMs = 40) {
+            const session = renderer.xr.getSession();
+            if (!session) return;
+            for (const source of session.inputSources) {
+                if (handedness !== 'both' && source.handedness !== handedness) continue;
+                const gp = source.gamepad;
+                if (!gp) continue;
+                try {
+                    if (gp.hapticActuators && gp.hapticActuators.length > 0 && gp.hapticActuators[0].pulse) {
+                        gp.hapticActuators[0].pulse(THREE.MathUtils.clamp(intensity, 0, 1), durationMs);
+                    } else if (gp.vibrationActuator && gp.vibrationActuator.playEffect) {
+                        gp.vibrationActuator.playEffect('dual-rumble', {
+                            startDelay: 0,
+                            duration: durationMs,
+                            weakMagnitude: THREE.MathUtils.clamp(intensity, 0, 1),
+                            strongMagnitude: THREE.MathUtils.clamp(intensity, 0, 1)
+                        });
+                    }
+                } catch (err) {}
+            }
+        }
+
+        // ============================================================================
+        // 2. SISTEMA DE SONIDO SINTETIZADO + REPRODUCCIÓN MP3
+        // ============================================================================
+        class SoundSystem {
+            constructor() {
+                this.ctx = null;
+                this.masterGain = null;
+                this.thrusterOsc = null;
+                this.thrusterGain = null;
+                this.rainSource = null;
+                this.rainGain = null;
+            }
+
+            init() {
+                if (this.ctx) {
+                    if (this.ctx.state === 'suspended') this.ctx.resume();
+                    this.startRainAmbience();
+                    return;
+                }
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                this.ctx = new AudioCtx();
+                this.masterGain = this.ctx.createGain();
+                this.masterGain.gain.value = 0.55;
+                this.masterGain.connect(this.ctx.destination);
+                this.startRainAmbience();
+            }
+
+            startRainAmbience() {
+                if (!this.ctx || this.rainSource) return;
+                const dur = 4.0;
+                const sampleRate = this.ctx.sampleRate;
+                const bufSize = Math.floor(sampleRate * dur);
+                const rainBuf = this.ctx.createBuffer(2, bufSize, sampleRate);
+
+                // Generar lluvia estéreo continua (ruido rosa/marrón de tormenta + micro-gotas en el piso mojado)
+                for (let ch = 0; ch < 2; ch++) {
+                    const data = rainBuf.getChannelData(ch);
+                    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+                    for (let i = 0; i < bufSize; i++) {
+                        const white = Math.random() * 2 - 1;
+                        b0 = 0.99886 * b0 + white * 0.0555179;
+                        b1 = 0.99332 * b1 + white * 0.0750759;
+                        b2 = 0.96900 * b2 + white * 0.1538520;
+                        b3 = 0.86650 * b3 + white * 0.3104856;
+                        b4 = 0.55000 * b4 + white * 0.5329522;
+                        b5 = -0.7616 * b5 - white * 0.0168980;
+                        const pink = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.045;
+                        b6 = white * 0.115926;
+
+                        // Chisporroteo sutil de gotas de agua chocando contra el asfalto
+                        const droplet = (Math.random() > 0.9965) ? (Math.random() * 2 - 1) * 0.32 : 0;
+                        // Envolvente de cruce suave en los bordes del bucle para que no se note el corte
+                        const fade = Math.min(1.0, Math.min(i / (sampleRate * 0.08), (bufSize - i) / (sampleRate * 0.08)));
+                        data[i] = (pink + droplet + white * 0.035) * fade;
+                    }
+                }
+
+                this.rainSource = this.ctx.createBufferSource();
+                this.rainSource.buffer = rainBuf;
+                this.rainSource.loop = true;
+
+                const lowpass = this.ctx.createBiquadFilter();
+                lowpass.type = 'lowpass';
+                lowpass.frequency.setValueAtTime(1650, this.ctx.currentTime);
+
+                const highpass = this.ctx.createBiquadFilter();
+                highpass.type = 'highpass';
+                highpass.frequency.setValueAtTime(220, this.ctx.currentTime);
+
+                this.rainGain = this.ctx.createGain();
+                this.rainGain.gain.setValueAtTime(0.32, this.ctx.currentTime);
+
+                this.rainSource.connect(lowpass);
+                lowpass.connect(highpass);
+                highpass.connect(this.rainGain);
+                this.rainGain.connect(this.masterGain);
+                this.rainSource.start(0);
+            }
+
+            playCannonBeamBlast() {
+                this.init();
+                playSoundResource(BOSS_SHOOT_AUDIO_URL, 0.95);
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const subOsc = this.ctx.createOscillator();
+                const lfo = this.ctx.createOscillator();
+                const lfoGain = this.ctx.createGain();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(145, now);
+                subOsc.type = 'square';
+                subOsc.frequency.setValueAtTime(72.5, now);
+
+                lfo.type = 'sine';
+                lfo.frequency.setValueAtTime(42, now);
+                lfoGain.gain.setValueAtTime(65, now);
+
+                lfo.connect(lfoGain);
+                lfoGain.connect(osc.frequency);
+
+                gain.gain.setValueAtTime(0.38, now);
+                gain.gain.exponentialRampToValueAtTime(0.008, now + 2.3);
+
+                osc.connect(gain);
+                subOsc.connect(gain);
+                gain.connect(this.masterGain);
+
+                osc.start(now);
+                subOsc.start(now);
+                lfo.start(now);
+                osc.stop(now + 2.35);
+                subOsc.stop(now + 2.35);
+                lfo.stop(now + 2.35);
+            }
+
+            playPlayerShoot() {
+                this.init();
+                playSoundResource(SHOT_AUDIO_URL, 0.88);
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(1350, now);
+                osc.frequency.exponentialRampToValueAtTime(180, now + 0.12);
+                gain.gain.setValueAtTime(0.22, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+                osc.start(now);
+                osc.stop(now + 0.13);
+            }
+
+            playJetpackEquip() {
+                this.init();
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                [261.63, 329.63, 392.00, 523.25].forEach((freq, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+                    gain.gain.setValueAtTime(0.24, now + idx * 0.08);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.35);
+                    osc.connect(gain);
+                    gain.connect(this.masterGain);
+                    osc.start(now + idx * 0.08);
+                    osc.stop(now + idx * 0.08 + 0.36);
+                });
+            }
+
+            setJetpackThrusterActive(active, altitudeRatio = 0) {
+                this.init();
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                if (active) {
+                    if (!this.thrusterOsc) {
+                        this.thrusterOsc = this.ctx.createOscillator();
+                        this.thrusterGain = this.ctx.createGain();
+                        this.thrusterOsc.type = 'sawtooth';
+                        this.thrusterOsc.frequency.setValueAtTime(85, now);
+                        this.thrusterGain.gain.setValueAtTime(0.01, now);
+                        this.thrusterOsc.connect(this.thrusterGain);
+                        this.thrusterGain.connect(this.masterGain);
+                        this.thrusterOsc.start(now);
+                    }
+                    this.thrusterOsc.frequency.setTargetAtTime(92 + altitudeRatio * 65, now, 0.08);
+                    this.thrusterGain.gain.setTargetAtTime(0.14, now, 0.06);
+                } else if (this.thrusterGain) {
+                    this.thrusterGain.gain.setTargetAtTime(0.0001, now, 0.08);
+                }
+            }
+
+            playColossalFootstep() {
+                this.init();
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const subOsc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                subOsc.type = 'sine';
+                subOsc.frequency.setValueAtTime(75, now);
+                subOsc.frequency.exponentialRampToValueAtTime(18, now + 0.45);
+                gain.gain.setValueAtTime(0.55, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.48);
+                subOsc.connect(gain);
+                gain.connect(this.masterGain);
+                subOsc.start(now);
+                subOsc.stop(now + 0.49);
+            }
+
+            playBossHandCharge() {
+                playSoundResource(BOSS_CHARGE_AUDIO_URL, 0.92);
+            }
+
+            playBossShoot() {
+                playSoundResource(BOSS_SHOOT_AUDIO_URL, 0.92);
+            }
+
+            playCriticalHit() {
+                this.init();
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(520, now);
+                osc.frequency.exponentialRampToValueAtTime(1380, now + 0.14);
+                gain.gain.setValueAtTime(0.28, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+                osc.start(now);
+                osc.stop(now + 0.17);
+            }
+
+            playArmorRicochet() {
+                this.init();
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(1950, now);
+                osc.frequency.exponentialRampToValueAtTime(340, now + 0.12);
+                gain.gain.setValueAtTime(0.18, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+                osc.start(now);
+                osc.stop(now + 0.14);
+            }
+
+            playTurbineDestroyed() {
+                this.init();
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const dur = 1.25;
+                const bufSize = Math.floor(this.ctx.sampleRate * dur);
+                const buf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
+                const data = buf.getChannelData(0);
+                for (let i = 0; i < bufSize; i++) {
+                    data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufSize, 0.55);
+                }
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buf;
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(920, now);
+                filter.frequency.exponentialRampToValueAtTime(42, now + dur);
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.65, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.masterGain);
+                noise.start(now);
+                noise.stop(now + dur);
+            }
+
+            playPowerDownCollapse() {
+                this.init();
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(280, now);
+                osc.frequency.exponentialRampToValueAtTime(24, now + 2.4);
+                gain.gain.setValueAtTime(0.42, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 2.45);
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+                osc.start(now);
+                osc.stop(now + 2.5);
+            }
+
+            playUltronVoiceChord() {
+                this.init();
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                [82, 104, 123, 164].forEach(f => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(f, now);
+                    osc.frequency.linearRampToValueAtTime(f * 0.86, now + 0.75);
+                    gain.gain.setValueAtTime(0.09, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.75);
+                    osc.connect(gain);
+                    gain.connect(this.masterGain);
+                    osc.start(now);
+                    osc.stop(now + 0.76);
+                });
+            }
+
+            playThunder(intensity = 1.0) {
+                this.init();
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+
+                // 1. Chasquido eléctrico inicial (Arc Snap de alta frecuencia al quebrarse el aire)
+                const snapDur = 0.14;
+                const snapSamples = Math.floor(this.ctx.sampleRate * snapDur);
+                const snapBuf = this.ctx.createBuffer(1, snapSamples, this.ctx.sampleRate);
+                const snapData = snapBuf.getChannelData(0);
+                for (let i = 0; i < snapSamples; i++) {
+                    snapData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / snapSamples, 2.2);
+                }
+                const snapNoise = this.ctx.createBufferSource();
+                snapNoise.buffer = snapBuf;
+                const snapFilter = this.ctx.createBiquadFilter();
+                snapFilter.type = 'bandpass';
+                snapFilter.frequency.setValueAtTime(2200, now);
+                snapFilter.frequency.exponentialRampToValueAtTime(380, now + snapDur);
+                snapFilter.Q.value = 1.4;
+                const snapGain = this.ctx.createGain();
+                snapGain.gain.setValueAtTime(0.32 * intensity, now);
+                snapGain.gain.exponentialRampToValueAtTime(0.001, now + snapDur);
+                snapNoise.connect(snapFilter);
+                snapFilter.connect(snapGain);
+                snapGain.connect(this.masterGain);
+                snapNoise.start(now);
+                snapNoise.stop(now + snapDur);
+
+                // 2. Onda de choque sub-grave (golpe seco de trueno en el pecho)
+                const subOsc = this.ctx.createOscillator();
+                const subGain = this.ctx.createGain();
+                subOsc.type = 'triangle';
+                subOsc.frequency.setValueAtTime(98, now + 0.02);
+                subOsc.frequency.exponentialRampToValueAtTime(22, now + 0.95);
+                subGain.gain.setValueAtTime(0.48 * intensity, now + 0.02);
+                subGain.gain.exponentialRampToValueAtTime(0.001, now + 1.0);
+                subOsc.connect(subGain);
+                subGain.connect(this.masterGain);
+                subOsc.start(now + 0.02);
+                subOsc.stop(now + 1.02);
+
+                // 3. Estruendo atmosférico prolongado con ecos modulados en las nubes (Rolling Thunder)
+                const rumbleDur = 2.85;
+                const rumbleSamples = Math.floor(this.ctx.sampleRate * rumbleDur);
+                const rumbleBuf = this.ctx.createBuffer(1, rumbleSamples, this.ctx.sampleRate);
+                const rumbleData = rumbleBuf.getChannelData(0);
+                for (let i = 0; i < rumbleSamples; i++) {
+                    const t = i / rumbleSamples;
+                    // Tres oleadas naturales de eco de trueno que decaen progresivamente
+                    const swell1 = Math.exp(-Math.pow((t - 0.06) * 8.5, 2.0));
+                    const swell2 = Math.exp(-Math.pow((t - 0.24) * 5.0, 2.0)) * 0.72;
+                    const swell3 = Math.exp(-Math.pow((t - 0.52) * 3.2, 2.0)) * 0.45;
+                    const tail = Math.pow(1.0 - t, 1.6) * 0.35;
+                    const env = Math.min(1.0, swell1 + swell2 + swell3 + tail);
+                    rumbleData[i] = (Math.random() * 2 - 1) * env;
+                }
+                const rumbleNoise = this.ctx.createBufferSource();
+                rumbleNoise.buffer = rumbleBuf;
+
+                const rumbleFilter = this.ctx.createBiquadFilter();
+                rumbleFilter.type = 'lowpass';
+                rumbleFilter.frequency.setValueAtTime(420, now);
+                rumbleFilter.frequency.exponentialRampToValueAtTime(140, now + 0.65);
+                rumbleFilter.frequency.exponentialRampToValueAtTime(42, now + rumbleDur);
+
+                const rumbleGain = this.ctx.createGain();
+                rumbleGain.gain.setValueAtTime(0.56 * intensity, now);
+                rumbleGain.gain.exponentialRampToValueAtTime(0.001, now + rumbleDur);
+
+                rumbleNoise.connect(rumbleFilter);
+                rumbleFilter.connect(rumbleGain);
+                rumbleGain.connect(this.masterGain);
+                rumbleNoise.start(now);
+                rumbleNoise.stop(now + rumbleDur);
+            }
+        }
+
+        const sound = new SoundSystem();
+
+        // ============================================================================
+        // 3. ESCENA THREE.JS, WEBXR, CÁMARA (FAR=6500) Y ESCALA TITÁNICA 50.0x
+        // ============================================================================
+        const COLOSSAL_SCALE = 50.0; // Escala 50.0 (~375 metros de altura)
+        const LOCAL_GROUND_OFFSET_Y = 3.49; // Compensa GROUND_SURFACE_Y (-3.49) para apoyar las botas en Y = 0.0
+
+        const canvas = document.getElementById('game-canvas');
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.55;
+        renderer.shadowMap.enabled = false;
+        renderer.xr.enabled = true;
+
+        // Vectores y objetos reutilizables para evitar Garbage Collection por fotograma
+        const _v1 = new THREE.Vector3();
+        const _v2 = new THREE.Vector3();
+        const _v3 = new THREE.Vector3();
+        const _fwDir = new THREE.Vector3();
+        const _rtDir = new THREE.Vector3();
+        const _playerWorldPos = new THREE.Vector3();
+        const _turbineWorldPos = new THREE.Vector3();
+        const _rotMatrix = new THREE.Matrix4();
+        const _darkSmokeColor = new THREE.Color(0x14161d);
+        const _desktopDummyGun = new THREE.Object3D();
+
+        const scene = new THREE.Scene();
+        // Oscuridad absoluta inicial para que nada se vea reflejado antes de tomar el Jetpack
+        scene.background = new THREE.Color(0x000000);
+        scene.fog = new THREE.FogExp2(0x000000, 0.00065);
+
+        const pmremGenerator = new THREE.PMREMGenerator(renderer);
+        scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.03).texture;
+
+        // Textura radial aditiva super intensa para resplandores volumétricos en VR y Web
+        function createRadialGlowTexture() {
+            const c = document.createElement('canvas');
+            c.width = 256;
+            c.height = 256;
+            const ctx = c.getContext('2d');
+            const g = ctx.createRadialGradient(128, 128, 2, 128, 128, 126);
+            g.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
+            g.addColorStop(0.24, 'rgba(255, 245, 215, 0.98)');
+            g.addColorStop(0.52, 'rgba(255, 150, 40, 0.65)');
+            g.addColorStop(0.80, 'rgba(255, 55, 0, 0.24)');
+            g.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, 256, 256);
+            return new THREE.CanvasTexture(c);
+        }
+        const volumetricGlowTex = createRadialGlowTexture();
+
+        // Textura procedural de humo denso para las explosiones y columnas de humo de las turbinas
+        function createSmokePuffTexture() {
+            const c = document.createElement('canvas');
+            c.width = 256;
+            c.height = 256;
+            const ctx = c.getContext('2d');
+            ctx.clearRect(0, 0, 256, 256);
+            for (let i = 0; i < 9; i++) {
+                const ox = 128 + (Math.random() - 0.5) * 32;
+                const oy = 128 + (Math.random() - 0.5) * 32;
+                const rad = 44 + Math.random() * 32;
+                const g = ctx.createRadialGradient(ox, oy, 4, ox, oy, rad);
+                g.addColorStop(0.0, 'rgba(210, 215, 225, 0.34)');
+                g.addColorStop(0.55, 'rgba(120, 125, 135, 0.14)');
+                g.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
+                ctx.fillStyle = g;
+                ctx.beginPath();
+                ctx.arc(ox, oy, rad, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            // Máscara circular estricta para que jamás se note el borde cuadrado del plano/sprite en VR
+            ctx.globalCompositeOperation = 'destination-in';
+            const maskGrad = ctx.createRadialGradient(128, 128, 40, 128, 128, 120);
+            maskGrad.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
+            maskGrad.addColorStop(0.75, 'rgba(255, 255, 255, 0.65)');
+            maskGrad.addColorStop(1.0, 'rgba(255, 255, 255, 0.0)');
+            ctx.fillStyle = maskGrad;
+            ctx.fillRect(0, 0, 256, 256);
+            ctx.globalCompositeOperation = 'source-over';
+            return new THREE.CanvasTexture(c);
+        }
+        const smokePuffTex = createSmokePuffTexture();
+
+        const ultronVolumetricSprites = [];
+
+        function registerUltronGlowSprite(parentObj, colorHex, scaleX, scaleY, localPos, localYEstimate = 2.0) {
+            const sMat = new THREE.SpriteMaterial({
+                map: volumetricGlowTex,
+                color: colorHex,
+                transparent: true,
+                opacity: 0.0,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                fog: false
+            });
+            const sprite = new THREE.Sprite(sMat);
+            sprite.position.copy(localPos);
+            sprite.visible = false;
+            // Reducimos a la mitad el resplandor de los halos volumétricos de reactores y turbinas
+            const boostedX = scaleX * 0.85;
+            const boostedY = scaleY * 0.85;
+            sprite.scale.set(boostedX, boostedY, 1);
+            parentObj.add(sprite);
+            ultronVolumetricSprites.push({
+                sprite,
+                mat: sMat,
+                baseScaleX: boostedX,
+                baseScaleY: boostedY,
+                localYEstimate,
+                active: true
+            });
+            return sprite;
+        }
+
+        const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 8500);
+        camera.position.set(0, 1.7, 0);
+
+        // Dolly del jugador (inicia en z = 44 mirando hacia el Jetpack en z = 12 y Ultron en z = -235)
+        const playerDolly = new THREE.Group();
+        playerDolly.position.set(0, 0, 44);
+        scene.add(playerDolly);
+        playerDolly.add(camera);
+
+        // AudioListener para el Soundtrack MP3
+        const listener = new THREE.AudioListener();
+        camera.add(listener);
+        const bgm = new THREE.Audio(listener);
+
+        function startSoundtrackBGM() {
+            sound.init();
+            if (bgm.isPlaying) return;
+            const audioLoader = new THREE.AudioLoader();
+            audioLoader.setCrossOrigin('anonymous');
+            audioLoader.load(SOUNDTRACK_AUDIO_URL, (buffer) => {
+                bgm.setBuffer(buffer);
+                bgm.setLoop(true);
+                bgm.setVolume(0.55);
+                bgm.play();
+            }, undefined, () => {});
+        }
+
+        // Botón oficial WebXR (VRButton)
+        const vrButton = VRButton.createButton(renderer);
+        renderer.xr.addEventListener('sessionstart', () => {
+            document.body.classList.add('vr-active');
+            document.body.classList.add('game-active');
+            sound.init();
+            gameState.isRunning = true;
+        });
+        renderer.xr.addEventListener('sessionend', () => {
+            document.body.classList.remove('vr-active');
+        });
+        document.body.appendChild(vrButton);
+
+        // HUD 3D flotante dentro del casco VR (depthWrite: false y fog: false evitan el cuadro oscuro en el compositor VR)
+        const hudCanvas = document.createElement('canvas');
+        hudCanvas.width = 512;
+        hudCanvas.height = 168;
+        const vrHudCtx = hudCanvas.getContext('2d');
+        const vrHudTex = new THREE.CanvasTexture(hudCanvas);
+        const vrHudMesh = new THREE.Mesh(
+            new THREE.PlaneGeometry(1.45, 0.48),
+            new THREE.MeshBasicMaterial({
+                map: vrHudTex,
+                transparent: true,
+                depthTest: false,
+                depthWrite: false,
+                fog: false
+            })
+        );
+        vrHudMesh.renderOrder = 999;
+        vrHudMesh.position.set(0, -0.12, -1.35);
+        vrHudMesh.rotation.x = -0.03;
+        camera.add(vrHudMesh);
+
+        let gameOverMesh = null;
+        let lastHudPlayerHp = -1;
+        let lastHudBossHp = -1;
+        let lastHudFps = -1;
+        let lastHudAwake = false;
+
+        // ============================================================================
+        // 4. ESTADO GLOBAL DE LA EXPERIENCIA Y LAS 4 TURBINAS VULNERABLES
+        // ============================================================================
+        const gameState = {
+            isRunning: false,
+            isGameOver: false,
+            hasJetpack: false,
+            ultronAwakening: false,
+            ultronFullyAwake: false,
+            sequenceTime: 0,
+            walkTime: 0,
+            cameraShake: 0,
+            hudAlertText: 'VE AL CENTRO Y TOMA EL JETPACK BRILLANTE',
+            hudAlertUntil: 999999,
+            player: {
+                hp: 100,
+                maxHp: 100,
+                vel: new THREE.Vector3(),
+                yaw: 0,
+                pitch: 0.14,
+                isJetpackThrusting: false
+            },
+            boss: {
+                hp: 1200,
+                maxHp: 1200,
+                pos: new THREE.Vector3(0, 0, -235),
+                facingYaw: 0,
+                handAttackState: 'COOLDOWN', // 'COOLDOWN' -> 'CHARGING'
+                handAttackTimer: 3.5,
+                defeatState: 'NONE', // 'NONE' -> 'DYING' -> 'POWERED_OFF'
+                defeatTimer: 0,
+                kneelImpactDone: false,
+                collapseImpactDone: false,
+                bounceImpactDone: false,
+                powerDownSoundDone: false,
+                nextDeathExplosionTimer: 0
+            }
+        };
+
+        const keys = {};
+        const clock = new THREE.Clock();
+        let isMouseDownLeft = false;
+        let fpsFrameCount = 0;
+        let fpsLastTime = performance.now();
+        let currentFps = 60;
+
+        function setHudFlashMessage(msg, duration = 3.0) {
+            gameState.hudAlertText = msg;
+            gameState.hudAlertUntil = clock.getElapsedTime() + duration;
+        }
+
+        // ============================================================================
+        // 5. SISTEMA DE MATERIALES PBR, SHADER DE ENCENDIDO VERTICAL Y ATMÓSFERA
+        // ============================================================================
+        const BOOT_START_Y = -75.0;
+        const BOOT_END_Y = 475.0; // Cubre toda la altura de Ultron a escala 50.0 (~375m) con margen para el degradado amplio
+        const BOOT_DURATION = 15.0;
+        const bootSweepUniform = { value: BOOT_START_Y };
+
+        const materials = {
+            armorPrimary: new THREE.MeshStandardMaterial({
+                color: 0x1c2129,
+                metalness: 0.91,
+                roughness: 0.24,
+                envMapIntensity: 1.05
+            }),
+            armorHighlight: new THREE.MeshStandardMaterial({
+                color: 0x313946,
+                metalness: 0.94,
+                roughness: 0.18,
+                envMapIntensity: 1.20
+            }),
+            crescentSilver: new THREE.MeshStandardMaterial({
+                color: 0x566476,
+                metalness: 0.96,
+                roughness: 0.15,
+                envMapIntensity: 1.35
+            }),
+            underSuit: new THREE.MeshStandardMaterial({
+                color: 0x0a0c10,
+                metalness: 0.78,
+                roughness: 0.52,
+                envMapIntensity: 0.55
+            }),
+            darkJoint: new THREE.MeshStandardMaterial({
+                color: 0x050608,
+                metalness: 0.65,
+                roughness: 0.68,
+                envMapIntensity: 0.30
+            }),
+            // Emisión reducida a la mitad (50%) según lo solicitado
+            emissiveCore: new THREE.MeshStandardMaterial({
+                color: 0xff3b00,
+                emissive: 0xff2a00,
+                emissiveIntensity: 2.2,
+                roughness: 0.2,
+                metalness: 0.1
+            }),
+            emissiveDeep: new THREE.MeshStandardMaterial({
+                color: 0xff1e00,
+                emissive: 0xd91400,
+                emissiveIntensity: 1.4,
+                roughness: 0.3
+            }),
+            emissiveHot: new THREE.MeshStandardMaterial({
+                color: 0xffee55,
+                emissive: 0xffae00,
+                emissiveIntensity: 2.8,
+                roughness: 0.1
+            }),
+            lightningEdge: new THREE.MeshBasicMaterial({
+                color: 0x88ccff,
+                transparent: true,
+                opacity: 0.88,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            }),
+            lightningCore: new THREE.MeshBasicMaterial({
+                color: 0xe8f4ff,
+                transparent: true,
+                opacity: 0.96,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            })
+        };
+
+        // Inyecta el barrido vertical de encendido con degradado ultra difuminado (~120m) y ondulación orgánica
+        function injectVerticalBootShader(mat) {
+            mat.onBeforeCompile = (shader) => {
+                shader.uniforms.uBootSweepY = bootSweepUniform;
+                shader.vertexShader = `
+                    varying float vWorldY;
+                    varying float vCamDist;
+                    varying vec3 vWorldPosBoot;
+                ` + shader.vertexShader.replace(
+                    '#include <begin_vertex>',
+                    `#include <begin_vertex>
+                    vec4 wpBoot = modelMatrix * vec4(transformed, 1.0);
+                    vWorldPosBoot = wpBoot.xyz;
+                    vWorldY = wpBoot.y;
+                    vCamDist = length(cameraPosition - wpBoot.xyz);`
+                );
+
+                if (shader.fragmentShader.includes('#include <emissivemap_fragment>')) {
+                    shader.fragmentShader = `
+                        uniform float uBootSweepY;
+                        varying float vWorldY;
+                        varying float vCamDist;
+                        varying vec3 vWorldPosBoot;
+                    ` + shader.fragmentShader.replace(
+                        '#include <emissivemap_fragment>',
+                        `#include <emissivemap_fragment>
+                        float waveActive = smoothstep(-60.0, -15.0, uBootSweepY);
+                        float organicWave = (sin(vWorldPosBoot.x * 0.07) * 14.0 + cos(vWorldPosBoot.z * 0.07) * 14.0) * waveActive;
+                        float effectiveY = vWorldY + organicWave;
+                        float bootMask = smoothstep(uBootSweepY + 55.0, uBootSweepY - 65.0, effectiveY);
+                        float scanFront = exp(-pow((effectiveY - uBootSweepY) * 0.022, 2.0)) * 0.45 * waveActive * step(uBootSweepY, 445.0);
+                        totalEmissiveRadiance *= clamp(bootMask + scanFront, 0.0, 2.2);`
+                    ).replace(
+                        '#include <opaque_fragment>',
+                        `
+                        float waveActiveOut = smoothstep(-60.0, -15.0, uBootSweepY);
+                        float organicWaveOut = (sin(vWorldPosBoot.x * 0.07) * 14.0 + cos(vWorldPosBoot.z * 0.07) * 14.0) * waveActiveOut;
+                        float whiteLightMask = smoothstep(uBootSweepY + 55.0, uBootSweepY - 70.0, vWorldY + organicWaveOut);
+                        float distHaze = clamp((vCamDist - 95.0) / 520.0, 0.0, 0.58);
+                        float heightHaze = clamp(vWorldY / 420.0, 0.0, 0.42);
+                        vec3 stormHazeColor = vec3(0.015, 0.028, 0.052) * whiteLightMask;
+                        outgoingLight = mix(outgoingLight, stormHazeColor, clamp(distHaze + heightHaze * 0.45, 0.0, 0.65));
+                        outgoingLight *= whiteLightMask;
+                        #include <opaque_fragment>
+                        `
+                    );
+                } else {
+                    shader.fragmentShader = `
+                        uniform float uBootSweepY;
+                        varying float vWorldY;
+                        varying vec3 vWorldPosBoot;
+                    ` + shader.fragmentShader.replace(
+                        '#include <color_fragment>',
+                        `#include <color_fragment>
+                        float waveActiveBasic = smoothstep(-60.0, -15.0, uBootSweepY);
+                        float organicWaveBasic = (sin(vWorldPosBoot.x * 0.07) * 12.0 + cos(vWorldPosBoot.z * 0.07) * 12.0) * waveActiveBasic;
+                        float bootMask = smoothstep(uBootSweepY + 48.0, uBootSweepY - 58.0, vWorldY + organicWaveBasic);
+                        diffuseColor.rgb *= bootMask;
+                        diffuseColor.a *= bootMask;`
+                    );
+                }
+            };
+            mat.needsUpdate = true;
+        }
+
+        [
+            materials.armorPrimary,
+            materials.armorHighlight,
+            materials.crescentSilver,
+            materials.underSuit,
+            materials.darkJoint,
+            materials.emissiveCore,
+            materials.emissiveDeep,
+            materials.emissiveHot,
+            materials.lightningEdge,
+            materials.lightningCore
+        ].forEach(injectVerticalBootShader);
+
+        // ============================================================================
+        // 6. MODELO COLOSAL DE ULTRON PRESTIGE MK-X (ESCALA 50.0) Y 4 TURBINAS ARC
+        // ============================================================================
+        const colossalUltronAnchor = new THREE.Group();
+        colossalUltronAnchor.position.set(0, 0, -235);
+        colossalUltronAnchor.scale.setScalar(COLOSSAL_SCALE);
+        colossalUltronAnchor.visible = false; // Invisible en la noche hasta que agarras el Jetpack
+        scene.add(colossalUltronAnchor);
+
+        const ultronOffsetGroup = new THREE.Group();
+        ultronOffsetGroup.position.set(0, LOCAL_GROUND_OFFSET_Y, 0);
+        colossalUltronAnchor.add(ultronOffsetGroup);
+
+        const ultronRoot = new THREE.Group();
+        ultronOffsetGroup.add(ultronRoot);
+
+        const upperBodyPivot = new THREE.Group();
+        upperBodyPivot.position.set(0, 0.1, 0);
+        ultronRoot.add(upperBodyPivot);
+
+        const torsoGroup = new THREE.Group();
+        upperBodyPivot.add(torsoGroup);
+
+        const headGroup = new THREE.Group();
+        headGroup.position.set(0, 3.08, 0.12);
+        torsoGroup.add(headGroup);
+
+        const explodableParts = [];
+        function registerExplodable(mesh, directionVec, distanceScale = 1.0) {
+            mesh.userData.basePos = mesh.position.clone();
+            mesh.userData.explodeVec = directionVec.clone().normalize().multiplyScalar(distanceScale);
+            explodableParts.push(mesh);
+        }
+
+        const legJoints = {
+            left:  { hip: null, knee: null, ankle: null },
+            right: { hip: null, knee: null, ankle: null }
+        };
+
+        const animatedTurbines = [];
+        const vulnerableTurbines = []; // Las 4 turbinas de colores ARC para destruir a Ultron
+
+        function createBeveledPlate(points2D, depth = 0.08, bevelSize = 0.025, bevelThickness = 0.025, mat = materials.armorPrimary) {
+            const shape = new THREE.Shape();
+            shape.moveTo(points2D[0][0], points2D[0][1]);
+            for (let i = 1; i < points2D.length; i++) {
+                shape.lineTo(points2D[i][0], points2D[i][1]);
+            }
+            shape.closePath();
+
+            const geom = new THREE.ExtrudeGeometry(shape, {
+                steps: 1,
+                depth: depth,
+                bevelEnabled: true,
+                bevelThickness: bevelThickness,
+                bevelSize: bevelSize,
+                bevelOffset: 0,
+                bevelSegments: 2
+            });
+            geom.center();
+            return new THREE.Mesh(geom, mat);
+        }
+
+        function createCyberTurbine(radius = 0.35, depth = 0.16, bladeCount = 12, arcType = null, localYEstimate = 2.0) {
+            const group = new THREE.Group();
+
+            let coreMat = materials.emissiveCore;
+            let hotMat = materials.emissiveHot;
+            let colorHex = 0xff3b00;
+
+            if (arcType && weaponColors[arcType]) {
+                colorHex = weaponColors[arcType];
+                // Emisión de las 4 turbinas reducida a la mitad (50%)
+                coreMat = new THREE.MeshStandardMaterial({
+                    color: colorHex,
+                    emissive: colorHex,
+                    emissiveIntensity: 2.4,
+                    roughness: 0.15,
+                    metalness: 0.1
+                });
+                hotMat = new THREE.MeshStandardMaterial({
+                    color: 0xffffff,
+                    emissive: colorHex,
+                    emissiveIntensity: 3.2,
+                    roughness: 0.1
+                });
+                injectVerticalBootShader(coreMat);
+                injectVerticalBootShader(hotMat);
+            }
+
+            const outerRingGeo = new THREE.TorusGeometry(radius, radius * 0.18, 16, 40);
+            outerRingGeo.scale(1, 1, depth / (radius * 0.18));
+            const outerRing = new THREE.Mesh(outerRingGeo, materials.armorPrimary);
+            group.add(outerRing);
+
+            const backDisk = new THREE.Mesh(
+                new THREE.CylinderGeometry(radius * 0.92, radius * 0.92, depth * 0.5, 32),
+                materials.darkJoint
+            );
+            backDisk.rotation.x = Math.PI / 2;
+            backDisk.position.z = -depth * 0.25;
+            group.add(backDisk);
+
+            const glowRingOuter = new THREE.Mesh(
+                new THREE.TorusGeometry(radius * 0.78, radius * 0.055, 12, 36),
+                coreMat
+            );
+            glowRingOuter.position.z = depth * 0.08;
+            group.add(glowRingOuter);
+
+            const glowRingInner = new THREE.Mesh(
+                new THREE.TorusGeometry(radius * 0.52, radius * 0.045, 12, 32),
+                hotMat
+            );
+            glowRingInner.position.z = depth * 0.02;
+            group.add(glowRingInner);
+
+            const rotorGroup = new THREE.Group();
+            const bladeGeo = new THREE.BoxGeometry(radius * 0.36, radius * 0.045, depth * 0.35);
+            for (let i = 0; i < bladeCount; i++) {
+                const angle = (i / bladeCount) * Math.PI * 2;
+                const blade = new THREE.Mesh(bladeGeo, materials.underSuit);
+                blade.position.set(
+                    Math.cos(angle) * radius * 0.56,
+                    Math.sin(angle) * radius * 0.56,
+                    0
+                );
+                blade.rotation.z = angle + 0.45;
+                blade.rotation.y = 0.35;
+                rotorGroup.add(blade);
+            }
+
+            const centerCap = new THREE.Mesh(
+                new THREE.CylinderGeometry(radius * 0.26, radius * 0.32, depth * 0.6, 20),
+                materials.armorHighlight
+            );
+            centerCap.rotation.x = Math.PI / 2;
+            rotorGroup.add(centerCap);
+
+            const centerEye = new THREE.Mesh(
+                new THREE.SphereGeometry(radius * 0.18, 16, 16),
+                hotMat
+            );
+            centerEye.scale.set(1, 1, 0.45);
+            centerEye.position.z = depth * 0.25;
+            rotorGroup.add(centerEye);
+
+            group.add(rotorGroup);
+            animatedTurbines.push(rotorGroup);
+
+            if (arcType) {
+                const glowSprite = registerUltronGlowSprite(
+                    group,
+                    colorHex,
+                    radius * 4.2,
+                    radius * 4.2,
+                    new THREE.Vector3(0, 0, depth * 0.45),
+                    localYEstimate
+                );
+
+                vulnerableTurbines.push({
+                    id: arcType,
+                    type: arcType,
+                    colorHex,
+                    group,
+                    rotorGroup,
+                    coreMat,
+                    hotMat,
+                    glowRingOuter,
+                    glowRingInner,
+                    centerEye,
+                    glowSprite,
+                    hp: 300,
+                    maxHp: 300,
+                    destroyed: false,
+                    localYEstimate
+                });
+            }
+
+            return group;
+        }
+
+        function buildHeadAndNeck() {
+            const neckGroup = new THREE.Group();
+            neckGroup.position.set(0, 2.55, 0.02);
+            torsoGroup.add(neckGroup);
+
+            const neckCore = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.32, 0.44, 0.72, 16),
+                materials.underSuit
+            );
+            neckCore.position.set(0, 0.15, -0.04);
+            neckGroup.add(neckCore);
+
+            for (let i = 0; i < 4; i++) {
+                const yPos = -0.08 + i * 0.15;
+                const s = 1 - i * 0.05;
+                const collar = createBeveledPlate([
+                    [-0.32 * s, -0.04], [0, -0.10], [0.32 * s, -0.04],
+                    [0.26 * s, 0.04], [0, -0.02], [-0.26 * s, 0.04]
+                ], 0.24, 0.015, 0.015, materials.armorPrimary);
+                collar.position.set(0, yPos, 0.16);
+                collar.rotation.x = 0.25;
+                neckGroup.add(collar);
+
+                if (i < 3) {
+                    const throatGlow = new THREE.Mesh(
+                        new THREE.BoxGeometry(0.22 * s, 0.028, 0.12),
+                        materials.emissiveCore
+                    );
+                    throatGlow.position.set(0, yPos + 0.06, 0.24);
+                    throatGlow.rotation.x = 0.25;
+                    neckGroup.add(throatGlow);
+                }
+            }
+
+            [-1, 1].forEach(side => {
+                const strut = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.065, 0.085, 0.78, 12),
+                    materials.armorHighlight
+                );
+                strut.position.set(side * 0.28, 0.12, 0.06);
+                strut.rotation.z = side * 0.26;
+                strut.rotation.x = -0.12;
+                neckGroup.add(strut);
+
+                const trapPlate = createBeveledPlate([
+                    [0, 0], [0.45, -0.12], [0.52, -0.32], [0.1, -0.28]
+                ], 0.28, 0.02, 0.02, materials.armorPrimary);
+                trapPlate.scale.x = side;
+                trapPlate.position.set(side * 0.42, -0.12, -0.05);
+                trapPlate.rotation.y = -side * 0.25;
+                neckGroup.add(trapPlate);
+            });
+
+            const skullCore = new THREE.Mesh(
+                new THREE.SphereGeometry(0.46, 28, 24),
+                materials.underSuit
+            );
+            skullCore.scale.set(0.92, 1.08, 1.08);
+            skullCore.position.set(0, 0.16, -0.05);
+            headGroup.add(skullCore);
+
+            const centralCrest = createBeveledPlate([
+                [-0.08, -0.38], [0.08, -0.38],
+                [0.11, 0.05], [0.06, 0.42], [-0.06, 0.42], [-0.11, 0.05]
+            ], 0.56, 0.025, 0.025, materials.armorHighlight);
+            centralCrest.position.set(0, 0.34, 0.02);
+            centralCrest.rotation.x = 1.15;
+            headGroup.add(centralCrest);
+            registerExplodable(centralCrest, new THREE.Vector3(0, 1, 0.3), 0.45);
+
+            [-1, 1].forEach(side => {
+                const domePlate = createBeveledPlate([
+                    [0.02, 0.35], [0.34, 0.24], [0.38, -0.22], [0.10, -0.35], [0.02, -0.1]
+                ], 0.12, 0.02, 0.02, materials.armorPrimary);
+                domePlate.scale.x = side;
+                domePlate.position.set(side * 0.16, 0.28, 0.08);
+                domePlate.rotation.set(0.65, side * 0.42, -side * 0.18);
+                headGroup.add(domePlate);
+                registerExplodable(domePlate, new THREE.Vector3(side * 0.6, 0.8, 0.3), 0.4);
+            });
+
+            [-1, 1].forEach(side => {
+                const browAndEyeGroup = new THREE.Group();
+                browAndEyeGroup.position.set(side * 0.042, 0.145, 0.398);
+                browAndEyeGroup.rotation.set(0.12, side * 0.23, side * 0.08);
+
+                const browPlate = createBeveledPlate([
+                    [0.00, 0.018], [0.285, 0.142], [0.265, 0.178], [0.045, 0.088], [-0.008, 0.042]
+                ], 0.036, 0.007, 0.007, materials.armorHighlight);
+                browPlate.scale.x = side;
+                browPlate.position.set(side * 0.135, 0.095, -0.008);
+                browAndEyeGroup.add(browPlate);
+
+                const outerEyeShape = new THREE.Shape();
+                outerEyeShape.moveTo(0.022, 0.015);
+                outerEyeShape.lineTo(0.254, 0.120);
+                outerEyeShape.lineTo(0.158, 0.018);
+                outerEyeShape.closePath();
+
+                const outerEyeMesh = new THREE.Mesh(new THREE.ExtrudeGeometry(outerEyeShape, {
+                    steps: 1, depth: 0.032, bevelEnabled: true, bevelThickness: 0.005, bevelSize: 0.005, bevelSegments: 2
+                }), materials.emissiveCore);
+                outerEyeMesh.scale.x = side;
+                outerEyeMesh.position.set(0, -0.012, -0.004);
+                browAndEyeGroup.add(outerEyeMesh);
+
+                const innerEyeShape = new THREE.Shape();
+                innerEyeShape.moveTo(0.042, 0.024);
+                innerEyeShape.lineTo(0.232, 0.110);
+                innerEyeShape.lineTo(0.152, 0.030);
+                innerEyeShape.closePath();
+
+                const innerEyeMesh = new THREE.Mesh(new THREE.ExtrudeGeometry(innerEyeShape, {
+                    steps: 1, depth: 0.036, bevelEnabled: true, bevelThickness: 0.004, bevelSize: 0.004, bevelSegments: 1
+                }), materials.emissiveHot);
+                innerEyeMesh.scale.x = side;
+                innerEyeMesh.position.set(0, -0.012, 0.004);
+                browAndEyeGroup.add(innerEyeMesh);
+
+                registerUltronGlowSprite(browAndEyeGroup, 0xff5500, 0.85, 0.45, new THREE.Vector3(side * 0.14, 0.04, 0.08), 3.25);
+
+                headGroup.add(browAndEyeGroup);
+                registerExplodable(browAndEyeGroup, new THREE.Vector3(side * 0.35, 0.35, 0.9), 0.35);
+            });
+
+            const noseBridge = createBeveledPlate([
+                [-0.032, 0.16], [0.032, 0.16], [0.056, -0.14], [0.0, -0.22], [-0.056, -0.14]
+            ], 0.11, 0.012, 0.012, materials.armorPrimary);
+            noseBridge.position.set(0, 0.05, 0.424);
+            noseBridge.rotation.x = -0.12;
+            headGroup.add(noseBridge);
+
+            [-1, 1].forEach(side => {
+                const cheekCoreGroup = new THREE.Group();
+                cheekCoreGroup.position.set(side * 0.215, -0.045, 0.362);
+                cheekCoreGroup.rotation.set(0.08, side * 0.46, -side * 0.12);
+
+                const socketRim = new THREE.Mesh(
+                    new THREE.TorusGeometry(0.135, 0.032, 14, 28),
+                    materials.armorPrimary
+                );
+                socketRim.scale.set(0.88, 1.15, 1.0);
+                cheekCoreGroup.add(socketRim);
+
+                const innerGlowDisk = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.115, 0.115, 0.04, 24),
+                    materials.emissiveCore
+                );
+                innerGlowDisk.rotation.x = Math.PI / 2;
+                innerGlowDisk.scale.set(0.88, 1.0, 1.15);
+                innerGlowDisk.position.z = -0.01;
+                cheekCoreGroup.add(innerGlowDisk);
+
+                const pupilDot = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.036, 12, 12),
+                    materials.emissiveHot
+                );
+                pupilDot.position.z = 0.022;
+                cheekCoreGroup.add(pupilDot);
+
+                headGroup.add(cheekCoreGroup);
+            });
+
+            const mouthDarkCavity = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.19, 0.16, 0.22, 16, 1, false, -Math.PI * 0.4, Math.PI * 0.8),
+                materials.darkJoint
+            );
+            mouthDarkCavity.position.set(0, -0.20, 0.28);
+            headGroup.add(mouthDarkCavity);
+
+            [-0.46, -0.23, 0, 0.23, 0.46].forEach((ang, idx) => {
+                const barHeight = idx === 2 ? 0.23 : 0.20;
+                const bar = createBeveledPlate([
+                    [-0.018, barHeight * 0.5], [0.018, barHeight * 0.5],
+                    [0.012, -barHeight * 0.5], [-0.012, -barHeight * 0.5]
+                ], 0.05, 0.008, 0.008, materials.armorHighlight);
+                const r = 0.43;
+                bar.position.set(Math.sin(ang) * r * 0.52, -0.19, Math.cos(ang) * r);
+                bar.rotation.y = ang * 0.75;
+                bar.rotation.x = 0.12;
+                headGroup.add(bar);
+            });
+
+            [-1, 1].forEach(side => {
+                const crescentAssembly = new THREE.Group();
+                crescentAssembly.position.set(side * 0.58, 0.03, 0.15);
+                crescentAssembly.rotation.set(0.06, side * 0.16, -side * 0.02);
+
+                const bridgeBeam = createBeveledPlate([
+                    [-0.14, 0.038], [0.14, 0.048], [0.14, -0.048], [-0.14, -0.038]
+                ], 0.068, 0.010, 0.010, materials.armorHighlight);
+                bridgeBeam.position.set(-side * 0.14, -0.06, 0.01);
+                crescentAssembly.add(bridgeBeam);
+
+                const bladeHolder = new THREE.Group();
+                bladeHolder.position.set(side * 0.04, 0.02, 0);
+                bladeHolder.scale.setScalar(0.64);
+
+                const crescentShape = new THREE.Shape();
+                const steps = 28;
+                for (let i = 0; i <= steps; i++) {
+                    const t = i / steps;
+                    const angle = -Math.PI * 0.46 + t * (Math.PI * 0.96);
+                    const x = Math.cos(angle) * 0.34 - 0.10;
+                    const y = Math.sin(angle) * 0.56 + 0.08;
+                    if (i === 0) crescentShape.moveTo(x, y);
+                    else crescentShape.lineTo(x, y);
+                }
+                for (let i = steps; i >= 0; i--) {
+                    const t = i / steps;
+                    const angle = -Math.PI * 0.46 + t * (Math.PI * 0.96);
+                    const taper = Math.sin(t * Math.PI);
+                    const x = Math.cos(angle) * 0.34 - 0.10 - taper * 0.175;
+                    const y = Math.sin(angle) * 0.56 + 0.08 + taper * 0.01;
+                    crescentShape.lineTo(x, y);
+                }
+                crescentShape.closePath();
+
+                const crescentExtrude = new THREE.ExtrudeGeometry(crescentShape, {
+                    steps: 1, depth: 0.06, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.018, bevelSegments: 3
+                });
+                crescentExtrude.center();
+
+                const crescentBlade = new THREE.Mesh(crescentExtrude, materials.crescentSilver);
+                crescentBlade.scale.x = side;
+                bladeHolder.add(crescentBlade);
+
+                crescentAssembly.add(bladeHolder);
+                headGroup.add(crescentAssembly);
+                registerExplodable(crescentAssembly, new THREE.Vector3(side * 1.0, 0.15, 0.2), 0.55);
+            });
+        }
+        buildHeadAndNeck();
+
+        function buildTorsoAndPelvis() {
+            const chestCore = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.76, 0.54, 1.45, 20),
+                materials.underSuit
+            );
+            chestCore.scale.set(1.18, 1.0, 0.78);
+            chestCore.position.set(0, 1.95, 0.0);
+            torsoGroup.add(chestCore);
+
+            const innerReactorColumn = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.32, 0.22, 1.28, 16),
+                materials.emissiveCore
+            );
+            innerReactorColumn.scale.set(1.1, 1.0, 0.65);
+            innerReactorColumn.position.set(0, 1.62, 0.25);
+            torsoGroup.add(innerReactorColumn);
+
+            registerUltronGlowSprite(torsoGroup, 0xff4500, 1.85, 2.1, new THREE.Vector3(0, 1.82, 0.62), 1.82);
+
+            [-1, 1].forEach(side => {
+                const pecPlate = createBeveledPlate([
+                    [0.05, 0.42], [0.35, 0.52], [0.82, 0.34], [0.74, -0.15], [0.25, -0.34], [0.04, -0.14]
+                ], 0.16, 0.03, 0.03, materials.armorPrimary);
+                pecPlate.scale.x = side;
+                pecPlate.position.set(side * 0.44, 2.18, 0.36);
+                pecPlate.rotation.set(0.16, side * 0.36, -side * 0.06);
+                torsoGroup.add(pecPlate);
+                registerExplodable(pecPlate, new THREE.Vector3(side * 0.7, 0.3, 0.9), 0.55);
+
+                const collarPlate = createBeveledPlate([
+                    [0.0, 0.18], [0.56, 0.26], [0.64, 0.02], [0.12, -0.08]
+                ], 0.14, 0.022, 0.022, materials.armorHighlight);
+                collarPlate.scale.x = side;
+                collarPlate.position.set(side * 0.38, 2.52, 0.18);
+                collarPlate.rotation.set(0.45, side * 0.28, -side * 0.12);
+                torsoGroup.add(collarPlate);
+            });
+
+            const sternumShield = createBeveledPlate([
+                [-0.20, 0.32], [0.0, 0.24], [0.20, 0.32],
+                [0.24, -0.05], [0.0, -0.34], [-0.24, -0.05]
+            ], 0.18, 0.025, 0.025, materials.armorHighlight);
+            sternumShield.position.set(0, 2.08, 0.48);
+            sternumShield.rotation.x = 0.14;
+            torsoGroup.add(sternumShield);
+
+            for (let i = 0; i < 5; i++) {
+                const scaleW = 1 - i * 0.09;
+                const yPos = 1.72 - i * 0.21;
+                const zPos = 0.44 - i * 0.022;
+
+                const chevronPlate = createBeveledPlate([
+                    [-0.38 * scaleW, 0.14], [0.0, -0.05], [0.38 * scaleW, 0.14],
+                    [0.32 * scaleW, -0.02], [0.0, -0.22], [-0.32 * scaleW, -0.02]
+                ], 0.14, 0.02, 0.02, materials.armorPrimary);
+                chevronPlate.position.set(0, yPos, zPos);
+                chevronPlate.rotation.x = 0.12 - i * 0.02;
+                torsoGroup.add(chevronPlate);
+
+                const vGlowMesh = createBeveledPlate([
+                    [-0.32 * scaleW, 0.15], [0.0, -0.02], [0.32 * scaleW, 0.15],
+                    [0.28 * scaleW, 0.09], [0.0, -0.08], [-0.28 * scaleW, 0.09]
+                ], 0.08, 0.005, 0.005, materials.emissiveCore);
+                vGlowMesh.position.set(0, yPos + 0.05, zPos - 0.03);
+                vGlowMesh.rotation.x = 0.12 - i * 0.02;
+                torsoGroup.add(vGlowMesh);
+            }
+
+            const lowerAbCore = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.52, 0.46, 0.65, 16),
+                materials.underSuit
+            );
+            lowerAbCore.scale.set(1.12, 1.0, 0.76);
+            lowerAbCore.position.set(0, 1.02, -0.02);
+            torsoGroup.add(lowerAbCore);
+
+            const pelvisGroup = new THREE.Group();
+            pelvisGroup.position.set(0, 0.55, 0);
+            torsoGroup.add(pelvisGroup);
+
+            const pelvisCore = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.56, 0.48, 0.75, 16),
+                materials.underSuit
+            );
+            pelvisCore.scale.set(1.15, 1.0, 0.72);
+            pelvisGroup.add(pelvisCore);
+
+            const codpiece = createBeveledPlate([
+                [-0.24, 0.32], [0.24, 0.32], [0.30, 0.0], [0.0, -0.42], [-0.30, 0.0]
+            ], 0.18, 0.025, 0.025, materials.armorPrimary);
+            codpiece.position.set(0, 0.02, 0.34);
+            codpiece.rotation.x = -0.08;
+            pelvisGroup.add(codpiece);
+
+            // Turbinas de Cadera: Izquierda (side=1 -> 'string' Amarillo) y Derecha (side=-1 -> 'bool' Morado)
+            [-1, 1].forEach(side => {
+                const hipArch = new THREE.Mesh(
+                    new THREE.TorusGeometry(0.56, 0.145, 16, 32, Math.PI * 1.22),
+                    materials.armorPrimary
+                );
+                hipArch.position.set(side * 0.74, -0.02, 0.18);
+                hipArch.rotation.set(0.22, side * 0.78, -side * 0.28);
+                pelvisGroup.add(hipArch);
+
+                const hipArcType = side === 1 ? 'string' : 'bool';
+                const hipTurbine = createCyberTurbine(0.48, 0.28, 14, hipArcType, 0.45);
+                hipTurbine.position.set(side * 0.86, -0.10, 0.34);
+                hipTurbine.rotation.set(0.14, side * 0.65, -side * 0.14);
+                pelvisGroup.add(hipTurbine);
+
+                const legPivot = new THREE.Group();
+                legPivot.position.set(side * 0.52, -0.22, 0.02);
+                legPivot.scale.set(1.18, 1.18, 1.18);
+                legPivot.rotation.set(side === 1 ? 0.05 : -0.06, side * 0.08, side * 0.055);
+                pelvisGroup.add(legPivot);
+
+                const thighCore = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.35, 0.26, 1.48, 16),
+                    materials.underSuit
+                );
+                thighCore.position.set(0, -0.65, 0);
+                legPivot.add(thighCore);
+
+                const thighFrontPlate = createBeveledPlate([
+                    [-0.24, 0.62], [0.24, 0.55], [0.28, -0.44], [0.0, -0.70], [-0.26, -0.44]
+                ], 0.16, 0.025, 0.025, materials.armorPrimary);
+                thighFrontPlate.scale.x = side;
+                thighFrontPlate.position.set(side * 0.03, -0.63, 0.22);
+                thighFrontPlate.rotation.set(-0.06, side * 0.25, 0);
+                legPivot.add(thighFrontPlate);
+                registerExplodable(thighFrontPlate, new THREE.Vector3(side * 0.5, 0, 0.9), 0.5);
+
+                for (let v = 0; v < 4; v++) {
+                    const thighVent = new THREE.Mesh(
+                        new THREE.BoxGeometry(0.06, 0.032, 0.24),
+                        materials.emissiveCore
+                    );
+                    thighVent.position.set(side * 0.31, -0.38 - v * 0.17, 0.06);
+                    thighVent.rotation.z = side * 0.25;
+                    legPivot.add(thighVent);
+                }
+
+                const kneePivot = new THREE.Group();
+                kneePivot.position.set(0, -1.425, 0.02);
+                kneePivot.rotation.x = side === 1 ? 0.06 : 0.10;
+                legPivot.add(kneePivot);
+
+                const kneeCap = createBeveledPlate([
+                    [-0.18, 0.16], [0.0, 0.34], [0.18, 0.16],
+                    [0.22, -0.10], [0.0, -0.30], [-0.22, -0.10]
+                ], 0.16, 0.025, 0.025, materials.armorHighlight);
+                kneeCap.position.set(0, 0.02, 0.22);
+                kneeCap.rotation.x = -0.10;
+                kneePivot.add(kneeCap);
+
+                const shinGroup = new THREE.Group();
+                shinGroup.position.set(0, -0.80, -0.02);
+                kneePivot.add(shinGroup);
+
+                const shinCore = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.25, 0.17, 1.53, 16),
+                    materials.underSuit
+                );
+                shinGroup.add(shinCore);
+
+                for (let sIdx = 0; sIdx < 4; sIdx++) {
+                    const sc = 1 - sIdx * 0.065;
+                    const shinPlate = createBeveledPlate([
+                        [-0.20 * sc, 0.26], [0.0, 0.35], [0.20 * sc, 0.26],
+                        [0.22 * sc, -0.16], [0.0, -0.31], [-0.22 * sc, -0.16]
+                    ], 0.16, 0.022, 0.022, sIdx === 0 ? materials.armorHighlight : materials.armorPrimary);
+                    shinPlate.position.set(0, 0.39 - sIdx * 0.30, 0.18 - sIdx * 0.012);
+                    shinPlate.rotation.x = 0.06;
+                    shinGroup.add(shinPlate);
+                }
+
+                const anklePivot = new THREE.Group();
+                anklePivot.position.set(0, -1.575, 0.02);
+                anklePivot.rotation.x = side === 1 ? -0.08 : -0.04;
+                kneePivot.add(anklePivot);
+
+                const footSideTurbine = createCyberTurbine(0.17, 0.11, 10, null, -3.1);
+                footSideTurbine.position.set(side * 0.21, -0.02, 0.04);
+                footSideTurbine.rotation.y = side * Math.PI * 0.5;
+                anklePivot.add(footSideTurbine);
+
+                const footGroup = new THREE.Group();
+                footGroup.position.set(0, -0.18, 0.12);
+                anklePivot.add(footGroup);
+
+                const bootSole = createBeveledPlate([
+                    [-0.21, 0.32], [0.21, 0.32], [0.24, -0.18], [0.15, -0.44],
+                    [0.0, -0.50], [-0.15, -0.44], [-0.24, -0.18]
+                ], 0.09, 0.018, 0.018, materials.underSuit);
+                bootSole.rotation.x = Math.PI * 0.5;
+                bootSole.position.set(0, -0.055, 0.05);
+                footGroup.add(bootSole);
+
+                const bootToeCap = createBeveledPlate([
+                    [-0.22, 0.12], [0.22, 0.12], [0.20, -0.16], [0.12, -0.34],
+                    [0.0, -0.40], [-0.12, -0.34], [-0.20, -0.16]
+                ], 0.13, 0.024, 0.024, materials.armorHighlight);
+                bootToeCap.rotation.x = Math.PI * 0.47;
+                bootToeCap.position.set(0, 0.005, 0.24);
+                footGroup.add(bootToeCap);
+
+                if (side === 1) {
+                    legJoints.left.hip = legPivot;
+                    legJoints.left.knee = kneePivot;
+                    legJoints.left.ankle = anklePivot;
+                } else {
+                    legJoints.right.hip = legPivot;
+                    legJoints.right.knee = kneePivot;
+                    legJoints.right.ankle = anklePivot;
+                }
+            });
+        }
+        buildTorsoAndPelvis();
+
+        // HOMBROS Y BRAZOS CON TURBINAS ARC ('int' Verde en Hombro Izq y 'float' Cian en Hombro Der)
+        const leftShoulderPivot = new THREE.Group();
+        leftShoulderPivot.position.set(1.12, 2.22, -0.04);
+        leftShoulderPivot.scale.set(1.15, 1.15, 1.15);
+        torsoGroup.add(leftShoulderPivot);
+
+        const rightShoulderPivot = new THREE.Group();
+        rightShoulderPivot.position.set(-1.08, 2.18, 0.04);
+        rightShoulderPivot.scale.set(1.15, 1.15, 1.15);
+        torsoGroup.add(rightShoulderPivot);
+
+        const leftElbowPivot = new THREE.Group();
+        const rightElbowPivot = new THREE.Group();
+        const rightWristPivot = new THREE.Group();
+        const leftWristPivot = new THREE.Group();
+        const rightFingerPivots = [];
+        const leftFingerPivots = [];
+
+        function buildPauldronAndShoulder(side, parentPivot, isProminentLeft = true) {
+            const shoulderScale = isProminentLeft ? 1.08 : 0.98;
+            const pauldronGroup = new THREE.Group();
+            pauldronGroup.scale.setScalar(shoulderScale);
+            parentPivot.add(pauldronGroup);
+
+            const deltoidCore = new THREE.Mesh(
+                new THREE.SphereGeometry(0.42, 24, 24),
+                materials.underSuit
+            );
+            pauldronGroup.add(deltoidCore);
+
+            const shoulderArcType = side === 1 ? 'int' : 'float';
+            const shoulderTurbine = createCyberTurbine(0.40, 0.22, 14, shoulderArcType, 2.22);
+            shoulderTurbine.position.set(side * 0.16, -0.02, 0.30);
+            shoulderTurbine.rotation.set(0.05, side * 0.45, 0);
+            pauldronGroup.add(shoulderTurbine);
+
+            const topPauldron = createBeveledPlate([
+                [-0.38, -0.15], [-0.25, 0.35], [-0.02, 0.62], [0.08, 0.34],
+                [0.34, 0.52], [0.48, 0.15], [0.42, -0.28], [0.05, -0.12]
+            ], 0.34, 0.035, 0.035, materials.armorHighlight);
+            topPauldron.scale.x = side;
+            topPauldron.position.set(side * 0.14, 0.26, -0.02);
+            topPauldron.rotation.set(0.08, side * 0.22, -side * 0.18);
+            pauldronGroup.add(topPauldron);
+            registerExplodable(topPauldron, new THREE.Vector3(side * 0.8, 0.8, 0), 0.65);
+        }
+
+        function buildArmSegments(side, shoulderPivot, elbowPivot, wristPivot) {
+            const bicepGroup = new THREE.Group();
+            bicepGroup.position.set(side * 0.16, -0.72, 0);
+            shoulderPivot.add(bicepGroup);
+
+            const bicepCore = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.28, 0.23, 1.03, 16),
+                materials.underSuit
+            );
+            bicepGroup.add(bicepCore);
+
+            const bicepPlate = createBeveledPlate([
+                [-0.20, 0.43], [0.22, 0.35], [0.25, -0.35], [0.0, -0.48], [-0.22, -0.33]
+            ], 0.16, 0.025, 0.025, materials.armorPrimary);
+            bicepPlate.scale.x = side;
+            bicepPlate.position.set(side * 0.08, 0.02, 0.16);
+            bicepPlate.rotation.y = side * 0.35;
+            bicepGroup.add(bicepPlate);
+
+            elbowPivot.position.set(side * 0.18, -1.275, 0.0);
+            shoulderPivot.add(elbowPivot);
+
+            const elbowJoint = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.20, 0.20, 0.36, 16),
+                materials.darkJoint
+            );
+            elbowJoint.rotation.z = Math.PI / 2;
+            elbowPivot.add(elbowJoint);
+
+            const forearmGroup = new THREE.Group();
+            forearmGroup.position.set(0, -0.65, 0);
+            elbowPivot.add(forearmGroup);
+
+            const forearmCore = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.24, 0.17, 1.15, 16),
+                materials.underSuit
+            );
+            forearmGroup.add(forearmCore);
+
+            for (let f = 0; f < 4; f++) {
+                const s = 1 - f * 0.075;
+                const forearmPlate = createBeveledPlate([
+                    [-0.20 * s, 0.22], [0.20 * s, 0.22],
+                    [0.24 * s, -0.09], [0.0, -0.25], [-0.24 * s, -0.09]
+                ], 0.15, 0.022, 0.022, f === 0 ? materials.armorHighlight : materials.armorPrimary);
+                forearmPlate.position.set(side * 0.06, 0.32 - f * 0.24, 0.14);
+                forearmPlate.rotation.set(0.08, side * 0.35, 0);
+                forearmGroup.add(forearmPlate);
+            }
+
+            wristPivot.position.set(0, -1.225, 0);
+            elbowPivot.add(wristPivot);
+
+            const wristCuff = new THREE.Mesh(
+                new THREE.TorusGeometry(0.17, 0.045, 12, 24),
+                materials.armorHighlight
+            );
+            wristCuff.rotation.x = Math.PI / 2;
+            wristPivot.add(wristCuff);
+        }
+
+        let rightHandGroupRef = null;
+        function buildClawedHand(side, wristPivot, fingerPivotsArray, hasBrightPalmNodes = true) {
+            const handGroup = new THREE.Group();
+            handGroup.position.set(0, -0.16, 0);
+            wristPivot.add(handGroup);
+            if (side === -1) rightHandGroupRef = handGroup;
+
+            const palmCore = createBeveledPlate([
+                [-0.18, 0.16], [0.18, 0.16], [0.21, -0.16], [-0.16, -0.18]
+            ], 0.13, 0.02, 0.02, materials.underSuit);
+            palmCore.scale.x = side;
+            handGroup.add(palmCore);
+
+            if (hasBrightPalmNodes) {
+                [-0.065, 0.075].forEach((xOff, idx) => {
+                    const palmGlowNode = new THREE.Mesh(
+                        new THREE.SphereGeometry(0.042, 14, 14),
+                        materials.emissiveHot
+                    );
+                    palmGlowNode.scale.set(1, 1, 0.65);
+                    // Ubicados en la cara interna de la palma (-Z, hacia donde cierran los dedos y mira hacia arriba)
+                    palmGlowNode.position.set(side * xOff, -0.02 + idx * 0.03, -0.085);
+                    handGroup.add(palmGlowNode);
+                });
+            }
+
+            const fingerSpecs = [
+                { x: -0.13 * side, y: -0.17, z: 0.0, len: 1.02, spread: -0.10 * side },
+                { x: -0.04 * side, y: -0.19, z: 0.0, len: 1.12, spread: -0.02 * side },
+                { x:  0.05 * side, y: -0.18, z: 0.0, len: 1.04, spread:  0.05 * side },
+                { x:  0.14 * side, y: -0.15, z: 0.0, len: 0.88, spread:  0.12 * side }
+            ];
+
+            fingerSpecs.forEach((spec) => {
+                const fBase = new THREE.Group();
+                fBase.position.set(spec.x, spec.y, spec.z);
+                fBase.rotation.z = spec.spread;
+                handGroup.add(fBase);
+
+                const ph1 = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.068, 0.14 * spec.len, 0.075),
+                    materials.armorPrimary
+                );
+                ph1.position.set(0, -0.07 * spec.len, 0);
+                fBase.add(ph1);
+
+                const fMid = new THREE.Group();
+                fMid.position.set(0, -0.14 * spec.len, 0);
+                fBase.add(fMid);
+
+                const ph2 = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.058, 0.12 * spec.len, 0.065),
+                    materials.underSuit
+                );
+                ph2.position.set(0, -0.06 * spec.len, 0);
+                fMid.add(ph2);
+
+                const fTip = new THREE.Group();
+                fTip.position.set(0, -0.12 * spec.len, 0);
+                fMid.add(fTip);
+
+                const clawMesh = createBeveledPlate([
+                    [-0.02, 0.02], [0.025, 0.02], [0.032, -0.08 * spec.len],
+                    [0.0, -0.22 * spec.len], [-0.028, -0.07 * spec.len]
+                ], 0.036, 0.008, 0.008, materials.armorHighlight);
+                clawMesh.rotation.y = Math.PI / 2;
+                clawMesh.rotation.x = 0.28;
+                clawMesh.position.set(0, -0.08 * spec.len, 0.02);
+                fTip.add(clawMesh);
+
+                fingerPivotsArray.push({ base: fBase, mid: fMid, tip: fTip, isThumb: false });
+            });
+
+            const thumbBase = new THREE.Group();
+            thumbBase.position.set(-0.18 * side, -0.04, -0.05);
+            thumbBase.rotation.set(0.3, 0.5 * side, -0.65 * side);
+            handGroup.add(thumbBase);
+
+            const thumbMid = new THREE.Group();
+            thumbMid.position.set(0, -0.13, 0);
+            thumbBase.add(thumbMid);
+
+            const thumbClaw = createBeveledPlate([
+                [-0.025, 0.02], [0.025, 0.02], [0.03, -0.08], [0.0, -0.20], [-0.028, -0.07]
+            ], 0.042, 0.008, 0.008, materials.armorHighlight);
+            thumbClaw.rotation.y = Math.PI / 2;
+            thumbClaw.rotation.x = 0.35;
+            thumbClaw.position.set(0, -0.08, 0.02);
+            thumbMid.add(thumbClaw);
+
+            fingerPivotsArray.push({ base: thumbBase, mid: thumbMid, tip: thumbMid, isThumb: true });
+        }
+
+        buildPauldronAndShoulder(1, leftShoulderPivot, true);
+        buildPauldronAndShoulder(-1, rightShoulderPivot, false);
+        buildArmSegments(1, leftShoulderPivot, leftElbowPivot, leftWristPivot);
+        buildArmSegments(-1, rightShoulderPivot, rightElbowPivot, rightWristPivot);
+        buildClawedHand(1, leftWristPivot, leftFingerPivots, false);
+        buildClawedHand(-1, rightWristPivot, rightFingerPivots, true);
+
+        // NODO DE SINGULARIDAD PLASMÁTICA SOBRE LA PALMA ABIERTA HACIA ARRIBA DE LA MANO DERECHA
+        const handChargeNode = new THREE.Group();
+        handChargeNode.position.set(0, -0.26, -0.38);
+        handChargeNode.scale.setScalar(0.001);
+        if (rightHandGroupRef) rightHandGroupRef.add(handChargeNode);
+
+        const handSingularityCore = new THREE.Mesh(
+            new THREE.IcosahedronGeometry(0.16, 2),
+            new THREE.MeshBasicMaterial({ color: 0xffffff })
+        );
+        handChargeNode.add(handSingularityCore);
+
+        const handSingularityShell = new THREE.Mesh(
+            new THREE.IcosahedronGeometry(0.28, 1),
+            new THREE.MeshBasicMaterial({ color: 0xff2200, wireframe: true, transparent: true, opacity: 0.88 })
+        );
+        handChargeNode.add(handSingularityShell);
+
+        const handGyroRings = [];
+        for (let r = 0; r < 3; r++) {
+            const gRing = new THREE.Mesh(
+                new THREE.TorusGeometry(0.34 + r * 0.09, 0.018, 8, 32),
+                new THREE.MeshBasicMaterial({ color: r % 2 === 0 ? 0xffaa00 : 0xff2200 })
+            );
+            gRing.rotation.set(r * 1.1, r * 0.7, 0);
+            handChargeNode.add(gRing);
+            handGyroRings.push(gRing);
+        }
+
+        const handChargeHalo = new THREE.Sprite(
+            new THREE.SpriteMaterial({
+                map: volumetricGlowTex,
+                color: 0xff4500,
+                transparent: true,
+                opacity: 0.9,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            })
+        );
+        handChargeHalo.scale.set(2.2, 2.2, 1);
+        handChargeNode.add(handChargeHalo);
+
+        // RAYOS FRACTALES NORMALES EN LA MANO DERECHA (Mismo algoritmo fractal de las nubes)
+        const lightningGroup = new THREE.Group();
+        if (rightHandGroupRef) rightHandGroupRef.add(lightningGroup);
+
+        const handFractalBoltGeo = new THREE.CylinderGeometry(0.8, 1.0, 1.0, 5);
+        handFractalBoltGeo.translate(0, 0.5, 0);
+        handFractalBoltGeo.rotateX(Math.PI * 0.5);
+
+        const handFractalArcs = [];
+        const HAND_ARC_ENDPOINTS = [
+            { start: new THREE.Vector3(-0.18, -0.05, -0.08), end: new THREE.Vector3(0.05, -0.34, -0.44) },
+            { start: new THREE.Vector3(0.18, -0.06, -0.08),  end: new THREE.Vector3(-0.06, -0.32, -0.42) },
+            { start: new THREE.Vector3(-0.14, -0.38, -0.22), end: new THREE.Vector3(0.16, -0.35, -0.26) },
+            { start: new THREE.Vector3(0.0, 0.35, -0.12),    end: new THREE.Vector3(0.02, -0.28, -0.38) },
+            { start: new THREE.Vector3(-0.22, -0.25, -0.15), end: new THREE.Vector3(0.18, -0.12, -0.35) }
+        ];
+
+        // Crea el pool de segmentos para cada arco fractal de la mano (16 segmentos principales + 8 de ramificación)
+        for (let a = 0; a < HAND_ARC_ENDPOINTS.length; a++) {
+            const mainSegs = [];
+            const branchSegs = [];
+            const mat = a % 2 === 0 ? materials.lightningCore : materials.lightningEdge;
+            for (let i = 0; i < 16; i++) {
+                const m = new THREE.Mesh(handFractalBoltGeo, mat);
+                lightningGroup.add(m);
+                mainSegs.push(m);
+            }
+            for (let i = 0; i < 8; i++) {
+                const m = new THREE.Mesh(handFractalBoltGeo, mat);
+                lightningGroup.add(m);
+                branchSegs.push(m);
+            }
+            handFractalArcs.push({
+                mainSegs,
+                branchSegs,
+                cfg: HAND_ARC_ENDPOINTS[a],
+                timer: a * 0.02
+            });
+        }
+
+        function rebuildHandFractalArc(arc) {
+            const jitterStart = arc.cfg.start.clone().add(new THREE.Vector3(
+                (Math.random() - 0.5) * 0.08,
+                (Math.random() - 0.5) * 0.08,
+                (Math.random() - 0.5) * 0.08
+            ));
+            const jitterEnd = arc.cfg.end.clone().add(new THREE.Vector3(
+                (Math.random() - 0.5) * 0.14,
+                (Math.random() - 0.5) * 0.14,
+                (Math.random() - 0.5) * 0.14
+            ));
+
+            // 4 generaciones = 17 puntos (16 segmentos) con el algoritmo de las nubes
+            const mainPts = subdivideLightningPath(jitterStart, jitterEnd, 4, 0.095);
+            for (let i = 0; i < 16; i++) {
+                const pA = mainPts[i];
+                const pB = mainPts[i + 1];
+                const seg = arc.mainSegs[i];
+                const dist = pA.distanceTo(pB);
+                const r = THREE.MathUtils.lerp(0.011, 0.0045, i / 15);
+                seg.position.copy(pA);
+                seg.lookAt(pB);
+                seg.scale.set(r, r, dist);
+            }
+
+            // Ramificación secundaria (3 generaciones = 9 puntos, 8 segmentos)
+            const branchOrigin = mainPts[5 + Math.floor(Math.random() * 5)];
+            const branchEnd = branchOrigin.clone().add(new THREE.Vector3(
+                (Math.random() - 0.5) * 0.28,
+                -0.12 - Math.random() * 0.18,
+                -0.10 - Math.random() * 0.18
+            ));
+            const branchPts = subdivideLightningPath(branchOrigin, branchEnd, 3, 0.045);
+            for (let i = 0; i < 8; i++) {
+                const pA = branchPts[i];
+                const pB = branchPts[i + 1];
+                const seg = arc.branchSegs[i];
+                const dist = pA.distanceTo(pB);
+                const r = THREE.MathUtils.lerp(0.0065, 0.002, i / 7);
+                seg.position.copy(pA);
+                seg.lookAt(pB);
+                seg.scale.set(r, r, dist);
+            }
+        }
+
+        // ============================================================================
+        // 7. CINEMÁTICA DE CAMINATA COLOSAL (JAEGER GAIT) Y POSTURAS
+        // ============================================================================
+        const POSES = {
+            walk: {
+                torsoRot: new THREE.Euler(0.03, -0.08, 0.0),
+                headRot: new THREE.Euler(0.02, 0.08, 0.0),
+                leftShoulder: new THREE.Euler(0.08, 0.08, 0.18),
+                leftElbow: new THREE.Euler(-0.42, 0.0, -0.06),
+                leftWrist: new THREE.Euler(0.08, -0.15, 0.08),
+                // Brazo derecho adelantado y muñeca girada 180° (Math.PI) para que la palma quede hacia arriba
+                rightShoulder: new THREE.Euler(-0.36, 0.18, -0.22),
+                rightElbow: new THREE.Euler(-1.28, -0.10, 0.08),
+                rightWrist: new THREE.Euler(-0.18, Math.PI, 0.0),
+                rightClawCurl: 0.68,
+                leftClawCurl: 1.55
+            }
+        };
+
+        const LEG_SCALE_FACTOR = 1.18;
+        const THIGH_LEN = 1.425 * LEG_SCALE_FACTOR;
+        const SHIN_LEN = 1.575 * LEG_SCALE_FACTOR;
+        const BASE_LEG_REACH = THIGH_LEN + SHIN_LEN;
+
+        const STEP_MOVE_DURATION = 4.8;
+        const STEP_PAUSE_DURATION = 1.0;
+        const HALF_CYCLE_DURATION = STEP_MOVE_DURATION + STEP_PAUSE_DURATION;
+        const FULL_GAIT_CYCLE_SECONDS = HALF_CYCLE_DURATION * 2.0;
+
+        function smoothStep01(x) {
+            const t = THREE.MathUtils.clamp(x, 0, 1);
+            return t * t * (3 - 2 * t);
+        }
+
+        function computeFootKinematics(hipX, kneeX) {
+            const totalPitch = hipX + kneeX;
+            const verticalDrop = THIGH_LEN * Math.cos(hipX) + SHIN_LEN * Math.cos(totalPitch);
+            const footForwardZ = -THIGH_LEN * Math.sin(hipX) - SHIN_LEN * Math.sin(totalPitch);
+            return { verticalDrop, footForwardZ };
+        }
+
+        function evaluateJaegerGait(cyclePhase, pauseElapsed = 0, isPaused = false) {
+            const p = ((cyclePhase % 1) + 1) % 1;
+            let hipAngle = 0;
+            let kneeAngle = 0;
+            let ankleAngle = 0;
+            let isImpactFrame = false;
+
+            if (p < 0.10) {
+                const t = smoothStep01(p / 0.10);
+                hipAngle = THREE.MathUtils.lerp(0.30, 0.18, t);
+                kneeAngle = THREE.MathUtils.lerp(0.08, 0.56, t);
+                ankleAngle = -(hipAngle + kneeAngle) + 0.18 * t;
+            } else if (p < 0.38) {
+                const t = smoothStep01((p - 0.10) / 0.28);
+                hipAngle = THREE.MathUtils.lerp(0.18, -0.42, t);
+                kneeAngle = THREE.MathUtils.lerp(0.56, 0.14, t) + Math.sin(t * Math.PI) * 0.28;
+                ankleAngle = -(hipAngle + kneeAngle) + 0.08 * Math.sin(t * Math.PI);
+            } else if (p <= 0.5001) {
+                const t = THREE.MathUtils.clamp((p - 0.38) / 0.12, 0, 1);
+                const grav = t * t;
+                hipAngle = THREE.MathUtils.lerp(-0.42, -0.36, grav);
+                kneeAngle = THREE.MathUtils.lerp(0.14, 0.12, grav);
+                ankleAngle = -(hipAngle + kneeAngle);
+                if (t > 0.90 || isPaused) isImpactFrame = true;
+            } else {
+                const t = smoothStep01((p - 0.50) / 0.50);
+                hipAngle = THREE.MathUtils.lerp(-0.36, 0.30, t);
+                kneeAngle = THREE.MathUtils.lerp(0.12, 0.08, t);
+                ankleAngle = -(hipAngle + kneeAngle);
+            }
+
+            const kin = computeFootKinematics(hipAngle, kneeAngle);
+            return {
+                hipAngle,
+                kneeAngle,
+                ankleAngle,
+                verticalDrop: kin.verticalDrop,
+                footForwardZ: kin.footForwardZ,
+                isImpactFrame
+            };
+        }
+
+        function applyWalkGaitFrame(gaitPhase, isPaused = false, pauseElapsed = 0, wholeBobY = 0, wholeJitterX = 0, wholeShiftZ = 0, wholeRollZ = 0) {
+            if (!legJoints.left.hip || !legJoints.right.hip) return { leftGait: null, rightGait: null };
+
+            const leftGait = evaluateJaegerGait(gaitPhase, pauseElapsed, isPaused);
+            const rightGait = evaluateJaegerGait(gaitPhase + 0.5, pauseElapsed, isPaused);
+
+            legJoints.left.hip.rotation.set(leftGait.hipAngle, 0.0, 0.055);
+            legJoints.right.hip.rotation.set(rightGait.hipAngle, 0.0, -0.055);
+
+            legJoints.left.knee.rotation.set(leftGait.kneeAngle, 0, 0);
+            legJoints.right.knee.rotation.set(rightGait.kneeAngle, 0, 0);
+
+            legJoints.left.ankle.rotation.set(leftGait.ankleAngle, 0, 0);
+            legJoints.right.ankle.rotation.set(rightGait.ankleAngle, 0, 0);
+
+            const maxLegDrop = Math.max(leftGait.verticalDrop, rightGait.verticalDrop);
+            const lockOffsetY = (maxLegDrop - BASE_LEG_REACH) + 0.025;
+
+            const phaseRad = gaitPhase * Math.PI * 2;
+            const lateralWeightShift = Math.sin(phaseRad);
+
+            ultronRoot.position.set(
+                -lateralWeightShift * 0.14 + wholeJitterX,
+                lockOffsetY + wholeBobY,
+                wholeShiftZ
+            );
+            ultronRoot.rotation.set(0, 0, lateralWeightShift * 0.032 + wholeRollZ);
+
+            legJoints.left.hip.rotation.z = 0.055 - lateralWeightShift * 0.025;
+            legJoints.right.hip.rotation.z = -0.055 - lateralWeightShift * 0.025;
+
+            const strideTwist = (leftGait.hipAngle - rightGait.hipAngle) * 0.22;
+            torsoGroup.rotation.y = POSES.walk.torsoRot.y + strideTwist;
+            torsoGroup.rotation.x = POSES.walk.torsoRot.x;
+            torsoGroup.rotation.z = -lateralWeightShift * 0.022 + wholeRollZ * 0.6;
+
+            headGroup.rotation.y = POSES.walk.headRot.y - strideTwist * 0.65;
+            headGroup.rotation.x = POSES.walk.headRot.x;
+            headGroup.rotation.z = POSES.walk.headRot.z;
+
+            leftShoulderPivot.rotation.set(
+                POSES.walk.leftShoulder.x - leftGait.hipAngle * 0.55,
+                POSES.walk.leftShoulder.y,
+                POSES.walk.leftShoulder.z
+            );
+            leftElbowPivot.rotation.set(
+                POSES.walk.leftElbow.x - wholeBobY * 0.5,
+                POSES.walk.leftElbow.y,
+                POSES.walk.leftElbow.z
+            );
+            leftWristPivot.rotation.copy(POSES.walk.leftWrist);
+
+            rightShoulderPivot.rotation.set(
+                POSES.walk.rightShoulder.x - rightGait.hipAngle * 0.30,
+                POSES.walk.rightShoulder.y,
+                POSES.walk.rightShoulder.z
+            );
+            rightElbowPivot.rotation.set(
+                POSES.walk.rightElbow.x - wholeBobY * 0.5,
+                POSES.walk.rightElbow.y,
+                POSES.walk.rightElbow.z
+            );
+            rightWristPivot.rotation.copy(POSES.walk.rightWrist);
+
+            return { leftGait, rightGait, lockOffsetY };
+        }
+
+        function getSteppedGaitPhase(elapsedWalkSeconds) {
+            const cycleSec = ((elapsedWalkSeconds % FULL_GAIT_CYCLE_SECONDS) + FULL_GAIT_CYCLE_SECONDS) % FULL_GAIT_CYCLE_SECONDS;
+            const halfIndex = cycleSec < HALF_CYCLE_DURATION ? 0 : 1;
+            const localSec = cycleSec - halfIndex * HALF_CYCLE_DURATION;
+
+            let subPhase;
+            let isPaused = false;
+            let pauseElapsed = 0;
+
+            if (localSec < STEP_MOVE_DURATION) {
+                subPhase = (localSec / STEP_MOVE_DURATION) * 0.5;
+            } else {
+                subPhase = 0.5;
+                isPaused = true;
+                pauseElapsed = localSec - STEP_MOVE_DURATION;
+            }
+
+            return {
+                gaitPhase: halfIndex * 0.5 + subPhase,
+                isPaused,
+                pauseElapsed
+            };
+        }
+
+        function applyPoseImmediate() {
+            const p = POSES.walk;
+            torsoGroup.rotation.copy(p.torsoRot);
+            headGroup.rotation.copy(p.headRot);
+            leftShoulderPivot.rotation.copy(p.leftShoulder);
+            leftElbowPivot.rotation.copy(p.leftElbow);
+            leftWristPivot.rotation.copy(p.leftWrist);
+            rightShoulderPivot.rotation.copy(p.rightShoulder);
+            rightElbowPivot.rotation.copy(p.rightElbow);
+            rightWristPivot.rotation.copy(p.rightWrist);
+
+            applyWalkGaitFrame(0, false, 0, 0, 0, 0, 0);
+
+            rightFingerPivots.forEach((fp, i) => {
+                const c = p.rightClawCurl + (i * 0.04);
+                if (fp.isThumb) {
+                    fp.mid.rotation.x = 0.55 * c;
+                } else {
+                    fp.base.rotation.x = 0.45 * c;
+                    fp.mid.rotation.x = 0.78 * c;
+                    fp.tip.rotation.x = 0.65 * c;
+                }
+            });
+
+            leftFingerPivots.forEach((fp, i) => {
+                const c = p.leftClawCurl + (i * 0.02);
+                if (fp.isThumb) {
+                    fp.base.rotation.set(0.75, -0.25, -0.85);
+                    fp.mid.rotation.x = 0.82 * c;
+                } else {
+                    fp.base.rotation.x = 0.88 * c;
+                    fp.mid.rotation.x = 0.96 * c;
+                    fp.tip.rotation.x = 0.72 * c;
+                }
+            });
+        }
+        applyPoseImmediate();
+
+        // Inicializar la geometría fractal de los rayos de la mano derecha
+        handFractalArcs.forEach(arc => rebuildHandFractalArc(arc));
+
+        // ============================================================================
+        // 8. ILUMINACIÓN (0.0 AL INICIO), NUBES, 20,000 GOTAS EN GPU Y RELÁMPAGOS FRACTALES
+        // ============================================================================
+        const keyLight = new THREE.DirectionalLight(0xd8ecff, 0.0);
+        keyLight.position.set(120, 420, 220);
+        keyLight.visible = false;
+        scene.add(keyLight);
+
+        const rimLightBlue = new THREE.DirectionalLight(0x4ea8ff, 0.0);
+        rimLightBlue.position.set(-180, 380, -320);
+        rimLightBlue.visible = false;
+        scene.add(rimLightBlue);
+
+        const chestReactorLight = new THREE.PointLight(0xff3300, 0.0, 290, 1.35);
+        chestReactorLight.visible = false;
+        scene.add(chestReactorLight);
+
+        const handPlasmaLight = new THREE.PointLight(0xff6600, 0.0, 220, 1.4);
+        handPlasmaLight.visible = false;
+        scene.add(handPlasmaLight);
+
+        const bootScannerLight = new THREE.PointLight(0xff5500, 0.0, 220, 1.4);
+        bootScannerLight.visible = false;
+        scene.add(bootScannerLight);
+
+        const stormFlashLight = new THREE.DirectionalLight(0x99ccff, 0.0);
+        stormFlashLight.position.set(-80, 480, 140);
+        stormFlashLight.visible = false;
+        scene.add(stormFlashLight);
+
+        // Suelo infinito mojado (6000m x 6000m, sin envMap en la oscuridad inicial para no reflejar cuadros del RoomEnvironment)
+        const wetFloor = new THREE.Mesh(
+            new THREE.PlaneGeometry(6000, 6000),
+            new THREE.MeshStandardMaterial({
+                color: 0x030508,
+                metalness: 0.85,
+                roughness: 0.28,
+                envMapIntensity: 0.0
+            })
+        );
+        wetFloor.rotation.x = -Math.PI / 2;
+        wetFloor.position.y = 0.0;
+        scene.add(wetFloor);
+
+        // 3 Capas de nubes de tormenta a escala colosal (blending aditivo suave y fog: false para no verse como cuadros oscuros)
+        const sharedCloudPlaneGeo = new THREE.PlaneGeometry(1, 1);
+        sharedCloudPlaneGeo.rotateX(-Math.PI / 2);
+        const colossalCloudLayers = [];
+        [
+            { y: 34, count: 14, size: 165, opacity: 0.07 },
+            { y: 128, count: 16, size: 260, opacity: 0.09 },
+            { y: 265, count: 18, size: 340, opacity: 0.11 }
+        ].forEach((layerCfg, lIdx) => {
+            for (let i = 0; i < layerCfg.count; i++) {
+                const cMat = new THREE.MeshBasicMaterial({
+                    map: smokePuffTex,
+                    color: 0x3b5878,
+                    transparent: true,
+                    opacity: 0.0,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false,
+                    fog: false,
+                    side: THREE.DoubleSide
+                });
+                const cPlane = new THREE.Mesh(sharedCloudPlaneGeo, cMat);
+                cPlane.visible = false;
+                cPlane.scale.set(layerCfg.size, 1, layerCfg.size);
+                cPlane.position.set(
+                    (Math.random() - 0.5) * 950,
+                    layerCfg.y + (Math.random() - 0.5) * 16,
+                    -235 + (Math.random() - 0.5) * 650
+                );
+                scene.add(cPlane);
+                colossalCloudLayers.push({
+                    mesh: cPlane,
+                    mat: cMat,
+                    baseX: cPlane.position.x,
+                    baseOpacity: layerCfg.opacity,
+                    speed: (lIdx + 1) * 3.5,
+                    phase: i * 0.9
+                });
+            }
+        });
+
+        // TORMENTA DILUVIANA 100% EN GPU (20,000 gotas animadas en el Vertex Shader con cero costo en CPU)
+        const rainSystemGroup = new THREE.Group();
+        scene.add(rainSystemGroup);
+
+        const rainUniforms = {
+            uTime: { value: 0.0 },
+            uCenterPos: { value: new THREE.Vector3(0, 0, 44) }
+        };
+
+        function createGPURainLayer(count, spanXZ, spanY, minLen, maxLen, minSpeed, maxSpeed, tiltX, tiltZ, colorHex, opacity) {
+            const positions = new Float32Array(count * 6);
+            const rainSeeds = new Float32Array(count * 8);
+
+            for (let i = 0; i < count; i++) {
+                const rx = (Math.random() - 0.5) * spanXZ;
+                const ry = Math.random() * spanY;
+                const rz = (Math.random() - 0.5) * spanXZ;
+                const len = minLen + Math.random() * (maxLen - minLen);
+                const spd = minSpeed + Math.random() * (maxSpeed - minSpeed);
+
+                // Vértice superior (offset local 0,0,0) e inferior (inclinación y longitud de la gota)
+                positions[i * 6 + 0] = 0;
+                positions[i * 6 + 1] = 0;
+                positions[i * 6 + 2] = 0;
+                positions[i * 6 + 3] = tiltX;
+                positions[i * 6 + 4] = -len;
+                positions[i * 6 + 5] = tiltZ;
+
+                // Semilla idéntica para ambos vértices del segmento
+                rainSeeds[i * 8 + 0] = rx;
+                rainSeeds[i * 8 + 1] = ry;
+                rainSeeds[i * 8 + 2] = rz;
+                rainSeeds[i * 8 + 3] = spd;
+                rainSeeds[i * 8 + 4] = rx;
+                rainSeeds[i * 8 + 5] = ry;
+                rainSeeds[i * 8 + 6] = rz;
+                rainSeeds[i * 8 + 7] = spd;
+            }
+
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geo.setAttribute('aRainSeed', new THREE.BufferAttribute(rainSeeds, 4));
+            geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 9000);
+
+            const mat = new THREE.LineBasicMaterial({
+                color: colorHex,
+                transparent: true,
+                opacity: opacity,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+
+            mat.onBeforeCompile = (shader) => {
+                shader.uniforms.uTime = rainUniforms.uTime;
+                shader.uniforms.uCenterPos = rainUniforms.uCenterPos;
+                shader.vertexShader = `
+                    uniform float uTime;
+                    uniform vec3 uCenterPos;
+                    attribute vec4 aRainSeed;
+                ` + shader.vertexShader.replace(
+                    '#include <begin_vertex>',
+                    `
+                    vec3 transformed = position;
+                    float spanXZ = ${spanXZ.toFixed(1)};
+                    float spanY = ${spanY.toFixed(1)};
+                    float wx = uCenterPos.x + mod(aRainSeed.x - uCenterPos.x + spanXZ * 0.5, spanXZ) - spanXZ * 0.5;
+                    float wz = uCenterPos.z + mod(aRainSeed.z - uCenterPos.z + spanXZ * 0.5, spanXZ) - spanXZ * 0.5;
+                    float wy = uCenterPos.y - 12.0 + mod(aRainSeed.y - uTime * aRainSeed.w, spanY);
+                    transformed += vec3(wx, wy, wz);
+                    `
+                );
+            };
+
+            const lines = new THREE.LineSegments(geo, mat);
+            lines.frustumCulled = false;
+            return lines;
+        }
+
+        rainSystemGroup.add(createGPURainLayer(13500, 380.0, 240.0, 2.2, 4.6, 68.0, 102.0, -0.22, 0.08, 0x99bbee, 0.36));
+        rainSystemGroup.add(createGPURainLayer(6500, 75.0, 55.0, 1.1, 2.3, 52.0, 76.0, -0.10, 0.04, 0xcce4ff, 0.45));
+
+        // ALGORITMO FRACTAL DE SUBDIVISIÓN DE PUNTO MEDIO PARA RELÁMPAGOS EN LAS NUBES (Geometría compartida)
+        const activeCloudLightnings = [];
+        let nextLightningTimer = 2.2;
+        const sharedLightningSegGeo = new THREE.CylinderGeometry(0.8, 1.0, 1.0, 5);
+        sharedLightningSegGeo.translate(0, 0.5, 0);
+        sharedLightningSegGeo.rotateX(Math.PI * 0.5);
+
+        function subdivideLightningPath(startPt, endPt, generations = 5, maxOffset = 42.0) {
+            let points = [startPt.clone(), endPt.clone()];
+            const mainDir = _v1.subVectors(endPt, startPt).normalize();
+            const upRef = Math.abs(mainDir.y) > 0.9 ? _v2.set(1, 0, 0) : _v2.set(0, 1, 0);
+            const ortho1 = new THREE.Vector3().crossVectors(mainDir, upRef).normalize();
+            const ortho2 = new THREE.Vector3().crossVectors(mainDir, ortho1).normalize();
+
+            let offsetScale = maxOffset;
+            for (let g = 0; g < generations; g++) {
+                const nextPts = [points[0]];
+                for (let i = 0; i < points.length - 1; i++) {
+                    const pA = points[i];
+                    const pB = points[i + 1];
+                    const mid = new THREE.Vector3().addVectors(pA, pB).multiplyScalar(0.5);
+                    const r1 = (Math.random() - 0.5) * 2.0 * offsetScale;
+                    const r2 = (Math.random() - 0.5) * 2.0 * offsetScale;
+                    mid.addScaledVector(ortho1, r1);
+                    mid.addScaledVector(ortho2, r2);
+                    nextPts.push(mid, pB);
+                }
+                points = nextPts;
+                offsetScale *= 0.52;
+            }
+            return points;
+        }
+
+        function buildLightningBranchMesh(pts, radiusStart, radiusEnd, mat) {
+            const grp = new THREE.Group();
+            for (let i = 0; i < pts.length - 1; i++) {
+                const pA = pts[i];
+                const pB = pts[i + 1];
+                const dist = pA.distanceTo(pB);
+                const t = i / (pts.length - 1);
+                const r = THREE.MathUtils.lerp(radiusStart, radiusEnd, t);
+                const segMesh = new THREE.Mesh(sharedLightningSegGeo, mat);
+                segMesh.position.copy(pA);
+                segMesh.lookAt(pB);
+                segMesh.scale.set(r, r, dist);
+                grp.add(segMesh);
+            }
+            return grp;
+        }
+
+        function triggerCloudLightning() {
+            const boltGroup = new THREE.Group();
+            const isCloudToCloud = Math.random() < 0.65;
+            const startX = (Math.random() - 0.5) * 780;
+            const startY = 230 + Math.random() * 110;
+            const startZ = -180 + (Math.random() - 0.5) * 420;
+            const startPt = new THREE.Vector3(startX, startY, startZ);
+
+            const endPt = isCloudToCloud
+                ? new THREE.Vector3(startX + (Math.random() < 0.5 ? 1 : -1) * (160 + Math.random() * 220), startY - 35 - Math.random() * 65, startZ + (Math.random() - 0.5) * 160)
+                : new THREE.Vector3(startX + (Math.random() - 0.5) * 140, 12.0, startZ + (Math.random() - 0.5) * 140);
+
+            const coreMat = new THREE.MeshBasicMaterial({
+                color: 0xe8f4ff,
+                transparent: true,
+                opacity: 1.0,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+
+            const mainPts = subdivideLightningPath(startPt, endPt, 5, isCloudToCloud ? 28.0 : 36.0);
+            boltGroup.add(buildLightningBranchMesh(mainPts, 1.35, 0.45, coreMat));
+
+            const mainVec = new THREE.Vector3().subVectors(endPt, startPt);
+            for (let b = 0; b < 4; b++) {
+                const idx = Math.floor((0.2 + b * 0.18) * (mainPts.length - 1));
+                const branchOrigin = mainPts[idx];
+                if (!branchOrigin) continue;
+                const branchEnd = branchOrigin.clone()
+                    .addScaledVector(mainVec, 0.32 + Math.random() * 0.18)
+                    .add(new THREE.Vector3((Math.random() - 0.5) * 95, -25 - Math.random() * 40, (Math.random() - 0.5) * 95));
+                const branchPts = subdivideLightningPath(branchOrigin, branchEnd, 4, 12.0);
+                boltGroup.add(buildLightningBranchMesh(branchPts, 0.65, 0.12, coreMat));
+            }
+
+            const flashMat = new THREE.SpriteMaterial({
+                map: volumetricGlowTex,
+                color: 0x88ccff,
+                transparent: true,
+                opacity: 0.85,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+            const flashSprite = new THREE.Sprite(flashMat);
+            flashSprite.position.copy(startPt).lerp(endPt, 0.35);
+            flashSprite.scale.set(280, 280, 1);
+            boltGroup.add(flashSprite);
+
+            scene.add(boltGroup);
+            activeCloudLightnings.push({
+                mesh: boltGroup,
+                coreMat,
+                flashMat,
+                flashSprite,
+                age: 0,
+                maxAge: 0.38
+            });
+
+            sound.playThunder(0.75 + Math.random() * 0.45);
+        }
+
+        // Ondas de choque al pisar el suelo mojado
+        const stompShockwaves = [];
+        for (let i = 0; i < 2; i++) {
+            const swGeo = new THREE.RingGeometry(8.0, 14.0, 48);
+            swGeo.rotateX(-Math.PI / 2);
+            const swMat = new THREE.MeshBasicMaterial({
+                color: 0xff5500,
+                transparent: true,
+                opacity: 0.0,
+                side: THREE.DoubleSide,
+                depthWrite: false
+            });
+            const swMesh = new THREE.Mesh(swGeo, swMat);
+            swMesh.position.y = 0.25;
+            scene.add(swMesh);
+            stompShockwaves.push({ mesh: swMesh, active: false, age: 0 });
+        }
+
+        function triggerFootStomp(worldX, worldZ, idx) {
+            const sw = stompShockwaves[idx];
+            if (!sw) return;
+            sw.active = true;
+            sw.age = 0;
+            sw.mesh.position.set(worldX, 0.25, worldZ);
+            sw.mesh.scale.setScalar(1);
+            sw.mesh.material.opacity = 0.85;
+            sound.playColossalFootstep();
+            gameState.cameraShake = Math.min(1.4, gameState.cameraShake + 0.55);
+            triggerControllerHaptics('both', 0.8, 160);
+        }
+
+        // ============================================================================
+        // 9. JETPACK BRILLANTE EN EL CENTRO (ÚNICA LUZ EN LA OSCURIDAD INICIAL)
+        // ============================================================================
+        const jetpackPickupGroup = new THREE.Group();
+        jetpackPickupGroup.position.set(0, 1.55, 24);
+        scene.add(jetpackPickupGroup);
+
+        const jpBodyMat = new THREE.MeshStandardMaterial({
+            color: 0xffaa00,
+            emissive: 0xff6600,
+            emissiveIntensity: 2.2,
+            metalness: 0.85,
+            roughness: 0.2
+        });
+        const jpCyanMat = new THREE.MeshBasicMaterial({ color: 0x00f3ff });
+
+        [-0.32, 0.32].forEach(xOff => {
+            const thrusterCyl = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 1.15, 20), jpBodyMat);
+            thrusterCyl.position.set(xOff, 0, 0);
+            jetpackPickupGroup.add(thrusterCyl);
+
+            const nozzleGlow = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.55, 16), jpCyanMat);
+            nozzleGlow.position.set(xOff, -0.75, 0);
+            nozzleGlow.rotation.x = Math.PI;
+            jetpackPickupGroup.add(nozzleGlow);
+        });
+
+        const jpCenterCore = new THREE.Mesh(new THREE.OctahedronGeometry(0.36, 1), jpCyanMat);
+        jetpackPickupGroup.add(jpCenterCore);
+
+        const jpHoloRing = new THREE.Mesh(
+            new THREE.TorusGeometry(1.15, 0.04, 12, 48),
+            new THREE.MeshBasicMaterial({ color: 0x00f3ff, transparent: true, opacity: 0.85 })
+        );
+        jpHoloRing.rotation.x = Math.PI / 2;
+        jetpackPickupGroup.add(jpHoloRing);
+
+        const jpPointLight = new THREE.PointLight(0x00f3ff, 11.0, 48, 1.3);
+        jpPointLight.position.set(0, 0.4, 0);
+        jetpackPickupGroup.add(jpPointLight);
+
+        function equipJetpack() {
+            if (gameState.hasJetpack) return;
+            gameState.hasJetpack = true;
+            gameState.ultronAwakening = true;
+            gameState.sequenceTime = 0;
+            jetpackPickupGroup.visible = false;
+            jpPointLight.visible = false;
+            colossalUltronAnchor.visible = true;
+
+            sound.playJetpackEquip();
+            sound.playUltronVoiceChord();
+            startSoundtrackBGM();
+            triggerControllerHaptics('both', 0.9, 250);
+
+            const jpOverlay = document.getElementById('jetpack-pickup-overlay');
+            if (jpOverlay) {
+                jpOverlay.style.opacity = '1';
+                setTimeout(() => { jpOverlay.style.opacity = '0'; }, 800);
+            }
+        }
+
+        // ============================================================================
+        // 10. PISTOLAS DUALES ARC EN VR CON CAMBIO DE COLOR Y DISPARO MP3
+        // ============================================================================
+        const weaponMat = new THREE.MeshLambertMaterial({
+            color: weaponColors.int,
+            emissive: weaponColors.int,
+            emissiveIntensity: 0.95
+        });
+
+        function createGunMesh() {
+            const mesh = new THREE.Group();
+            const gunDarkMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.3), gunDarkMat);
+            const core = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.03, 0.15), weaponMat);
+            core.position.set(0, 0.06, -0.05);
+            mesh.add(body);
+            mesh.add(core);
+
+            const muzzleFlashMat = new THREE.MeshBasicMaterial({
+                color: weaponColors.int,
+                transparent: true,
+                opacity: 0.0,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+            const muzzleFlashMesh = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 10), muzzleFlashMat);
+            muzzleFlashMesh.position.set(0, 0.04, -0.18);
+            muzzleFlashMesh.name = 'muzzleFlash';
+            mesh.add(muzzleFlashMesh);
+
+            const laserGeo = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0, 0.06, 0),
+                new THREE.Vector3(0, 0.06, -120)
+            ]);
+            const laserMat = new THREE.LineBasicMaterial({ color: weaponColors.int, transparent: true, opacity: 0.55 });
+            const aimLine = new THREE.Line(laserGeo, laserMat);
+            aimLine.name = 'aimLine';
+            mesh.add(aimLine);
+
+            mesh.position.set(0, -0.05, -0.1);
+            mesh.rotation.x = -Math.PI / 8;
+            mesh.userData.recoilZ = 0;
+            mesh.userData.recoilRotX = 0;
+            mesh.userData.flashAlpha = 0;
+            return mesh;
+        }
+
+        let rightController = null;
+        let leftController = null;
+        let rightWeaponMesh = null;
+        let leftWeaponMesh = null;
+
+        const onControllerConnected = (event) => {
+            const controller = event.target;
+            const handedness = event.data.handedness;
+            controller.userData.isSelecting = false;
+            controller.userData.nextShot = 0;
+            controller.userData.handedness = handedness;
+
+            if (handedness === 'right') {
+                rightController = controller;
+                rightWeaponMesh = createGunMesh();
+                rightController.add(rightWeaponMesh);
+                rightController.addEventListener('selectstart', () => {
+                    rightController.userData.isSelecting = true;
+                    fireWeapon(rightController, rightWeaponMesh);
+                });
+                rightController.addEventListener('selectend', () => rightController.userData.isSelecting = false);
+            } else if (handedness === 'left') {
+                leftController = controller;
+                leftWeaponMesh = createGunMesh();
+                leftController.add(leftWeaponMesh);
+                leftController.addEventListener('selectstart', () => {
+                    leftController.userData.isSelecting = true;
+                    fireWeapon(leftController, leftWeaponMesh);
+                });
+                leftController.addEventListener('selectend', () => leftController.userData.isSelecting = false);
+            }
+            updateWeaponMaterial();
+        };
+
+        const controller1 = renderer.xr.getController(0);
+        controller1.addEventListener('connected', onControllerConnected);
+        playerDolly.add(controller1);
+
+        const controller2 = renderer.xr.getController(1);
+        controller2.addEventListener('connected', onControllerConnected);
+        playerDolly.add(controller2);
+
+        function getCurrentWeaponType() {
+            return unlockedWeapons[currentWeaponIndex] || 'int';
+        }
+
+        function updateWeaponMaterial() {
+            const type = getCurrentWeaponType();
+            const hex = weaponColors[type] || weaponColors.int;
+            weaponMat.color.setHex(hex);
+            weaponMat.emissive.setHex(hex);
+
+            [leftWeaponMesh, rightWeaponMesh].forEach(mesh => {
+                if (!mesh) return;
+                const aimLine = mesh.getObjectByName('aimLine');
+                if (aimLine) aimLine.material.color.setHex(hex);
+                const muzzleFlash = mesh.getObjectByName('muzzleFlash');
+                if (muzzleFlash) muzzleFlash.material.color.setHex(hex);
+            });
+        }
+
+        function switchWeapon(step = 1) {
+            currentWeaponIndex = (currentWeaponIndex + step + unlockedWeapons.length) % unlockedWeapons.length;
+            updateWeaponMaterial();
+            triggerControllerHaptics('right', 0.25, 22);
+        }
+
+        function updateVRGunRecoils(dt) {
+            [leftWeaponMesh, rightWeaponMesh].forEach(gun => {
+                if (!gun) return;
+                gun.userData.recoilZ = THREE.MathUtils.lerp(gun.userData.recoilZ || 0, 0, dt * 16);
+                gun.userData.recoilRotX = THREE.MathUtils.lerp(gun.userData.recoilRotX || 0, 0, dt * 16);
+                gun.userData.flashAlpha = Math.max(0, (gun.userData.flashAlpha || 0) - dt * 22);
+
+                gun.position.set(0, -0.05, -0.1 + gun.userData.recoilZ);
+                gun.rotation.x = -Math.PI / 8 + gun.userData.recoilRotX;
+
+                const mf = gun.getObjectByName('muzzleFlash');
+                if (mf) {
+                    mf.material.opacity = gun.userData.flashAlpha;
+                    mf.scale.setScalar(0.65 + gun.userData.flashAlpha * 0.85);
+                }
+            });
+        }
+
+        // ============================================================================
+        // 11. PROYECTILES, EXPLOSIONES TERMONUCLEARES DE TURBINA Y COLUMNAS DE HUMO
+        // ============================================================================
+        const playerBullets = [];
+        const bossBullets = [];
+        const activeTurbineExplosions = [];
+        const persistentSmokePlumes = [];
+
+        // Geometrías y materiales compartidos para evitar allocaciones en tiempo de ejecución
+        const sharedBulletLaserGeo = new THREE.CylinderGeometry(0.18, 0.18, 6.5, 8);
+        sharedBulletLaserGeo.rotateX(Math.PI / 2);
+        const sharedBulletCoreGeo = new THREE.CylinderGeometry(0.08, 0.08, 6.6, 6);
+        sharedBulletCoreGeo.rotateX(Math.PI / 2);
+        const sharedWhiteBasicMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const sharedBulletMats = {
+            int: new THREE.MeshBasicMaterial({ color: weaponColors.int }),
+            float: new THREE.MeshBasicMaterial({ color: weaponColors.float }),
+            string: new THREE.MeshBasicMaterial({ color: weaponColors.string }),
+            bool: new THREE.MeshBasicMaterial({ color: weaponColors.bool })
+        };
+
+        const sharedOrbCoreGeo = new THREE.IcosahedronGeometry(3.2, 1);
+        const sharedOrbCageGeo = new THREE.IcosahedronGeometry(5.4, 1);
+        const sharedOrbCageMat = new THREE.MeshBasicMaterial({ color: 0xff2200, wireframe: true, transparent: true, opacity: 0.9 });
+        const sharedOrbRingGeos = [
+            new THREE.TorusGeometry(6.8, 0.35, 8, 28),
+            new THREE.TorusGeometry(8.6, 0.35, 8, 28),
+            new THREE.TorusGeometry(10.4, 0.35, 8, 28)
+        ];
+        const sharedOrbRingMats = [
+            new THREE.MeshBasicMaterial({ color: 0xffaa00 }),
+            new THREE.MeshBasicMaterial({ color: 0xff3300 })
+        ];
+        const sharedOrbHaloMat = new THREE.SpriteMaterial({
+            map: volumetricGlowTex,
+            color: 0xff4500,
+            transparent: true,
+            opacity: 0.95,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+
+        const sharedExpDomeGeo = new THREE.SphereGeometry(4.5, 16, 16);
+        const sharedExpRingGeo = new THREE.TorusGeometry(5.5, 0.85, 10, 36);
+
+        const MAX_PARTICLES = 450;
+        const sparkInstancedMesh = new THREE.InstancedMesh(
+            new THREE.OctahedronGeometry(0.45, 0),
+            new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }),
+            MAX_PARTICLES
+        );
+        sparkInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        scene.add(sparkInstancedMesh);
+
+        const particlePool = [];
+        const dummyObj = new THREE.Object3D();
+        const tempColor = new THREE.Color();
+        for (let i = 0; i < MAX_PARTICLES; i++) {
+            particlePool.push({ active: false, pos: new THREE.Vector3(), vel: new THREE.Vector3(), life: 0, maxLife: 1, scale: 1 });
+            dummyObj.scale.setScalar(0);
+            dummyObj.updateMatrix();
+            sparkInstancedMesh.setMatrixAt(i, dummyObj.matrix);
+        }
+        let particleCursor = 0;
+
+        function spawnParticles(pos, colorHex, count = 16, speed = 28, size = 1.5) {
+            tempColor.setHex(colorHex);
+            for (let i = 0; i < count; i++) {
+                const idx = particleCursor;
+                particleCursor = (particleCursor + 1) % MAX_PARTICLES;
+                const p = particlePool[idx];
+                p.active = true;
+                p.pos.copy(pos);
+                p.vel.set((Math.random() - 0.5) * 2, Math.random() * 1.6 + 0.2, (Math.random() - 0.5) * 2).normalize().multiplyScalar(Math.random() * speed + 6);
+                p.maxLife = 0.55 + Math.random() * 0.55;
+                p.life = p.maxLife;
+                p.scale = size * (0.7 + Math.random() * 0.7);
+                sparkInstancedMesh.setColorAt(idx, tempColor);
+            }
+            if (sparkInstancedMesh.instanceColor) sparkInstancedMesh.instanceColor.needsUpdate = true;
+        }
+
+        // Explosión termonuclear con columna de humo negro al destruir una turbina
+        function triggerTurbineExplosion(worldPos, colorHex, turbineObj = null) {
+            sound.playTurbineDestroyed();
+            gameState.cameraShake = Math.min(1.8, gameState.cameraShake + 0.95);
+            triggerControllerHaptics('both', 1.0, 320);
+
+            const expGroup = new THREE.Group();
+            expGroup.position.copy(worldPos);
+            scene.add(expGroup);
+
+            const domeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending, depthWrite: false });
+            const plasmaDome = new THREE.Mesh(sharedExpDomeGeo, domeMat);
+            expGroup.add(plasmaDome);
+
+            const ringMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+            const shockwaveRing = new THREE.Mesh(sharedExpRingGeo, ringMat);
+            expGroup.add(shockwaveRing);
+
+            const smokeBillows = [];
+            for (let i = 0; i < 18; i++) {
+                const bMat = new THREE.SpriteMaterial({
+                    map: smokePuffTex,
+                    color: i < 6 ? 0xff7700 : 0x1a1d24,
+                    transparent: true,
+                    opacity: 0.92,
+                    depthWrite: false
+                });
+                const bSprite = new THREE.Sprite(bMat);
+                const s = 12 + Math.random() * 18;
+                bSprite.scale.set(s, s, 1);
+                bSprite.position.set((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8);
+                expGroup.add(bSprite);
+                smokeBillows.push({
+                    sprite: bSprite,
+                    mat: bMat,
+                    vel: new THREE.Vector3((Math.random() - 0.5) * 28, 16 + Math.random() * 32, (Math.random() - 0.5) * 28),
+                    initFire: i < 6
+                });
+            }
+
+            activeTurbineExplosions.push({
+                group: expGroup,
+                plasmaDome,
+                domeMat,
+                shockwaveRing,
+                ringMat,
+                smokeBillows,
+                age: 0,
+                maxAge: 2.8
+            });
+
+            if (turbineObj) {
+                persistentSmokePlumes.push({
+                    turbineGroup: turbineObj.group,
+                    puffs: [],
+                    spawnTimer: 0
+                });
+            }
+        }
+
+        function updateTurbineExplosionsAndSmoke(dt) {
+            for (let i = activeTurbineExplosions.length - 1; i >= 0; i--) {
+                const ex = activeTurbineExplosions[i];
+                ex.age += dt;
+                const t = ex.age / ex.maxAge;
+                if (t >= 1.0) {
+                    ex.domeMat.dispose();
+                    ex.ringMat.dispose();
+                    ex.smokeBillows.forEach(b => b.mat.dispose());
+                    scene.remove(ex.group);
+                    activeTurbineExplosions.splice(i, 1);
+                    continue;
+                }
+                ex.plasmaDome.scale.setScalar(1.0 + t * 9.5);
+                ex.domeMat.opacity = Math.max(0, 1.0 - t * 2.8);
+                ex.shockwaveRing.scale.setScalar(1.0 + t * 14.0);
+                ex.ringMat.opacity = Math.max(0, 1.0 - t * 1.6);
+
+                ex.smokeBillows.forEach(b => {
+                    b.sprite.position.addScaledVector(b.vel, dt);
+                    b.vel.multiplyScalar(0.96);
+                    b.sprite.scale.multiplyScalar(1.0 + dt * 0.45);
+                    if (b.initFire && t > 0.25) {
+                        b.mat.color.lerp(_darkSmokeColor, dt * 5.0);
+                    }
+                    b.mat.opacity = Math.max(0, (1.0 - t) * 0.85);
+                });
+            }
+
+            persistentSmokePlumes.forEach(plume => {
+                plume.spawnTimer += dt;
+                if (plume.spawnTimer >= 0.18) {
+                    plume.spawnTimer = 0;
+                    plume.turbineGroup.getWorldPosition(_v1);
+                    const sMat = new THREE.SpriteMaterial({
+                        map: smokePuffTex,
+                        color: Math.random() < 0.2 ? 0xff5500 : 0x181b22,
+                        transparent: true,
+                        opacity: 0.72,
+                        depthWrite: false
+                    });
+                    const sSprite = new THREE.Sprite(sMat);
+                    sSprite.position.set(
+                        _v1.x + (Math.random() - 0.5) * 4,
+                        _v1.y + (Math.random() - 0.5) * 4,
+                        _v1.z + (Math.random() - 0.5) * 4
+                    );
+                    sSprite.scale.set(14, 14, 1);
+                    scene.add(sSprite);
+                    plume.puffs.push({
+                        sprite: sSprite,
+                        mat: sMat,
+                        vel: new THREE.Vector3((Math.random() - 0.5) * 8, 18 + Math.random() * 14, (Math.random() - 0.5) * 8),
+                        age: 0,
+                        maxAge: 3.0
+                    });
+                }
+
+                for (let j = plume.puffs.length - 1; j >= 0; j--) {
+                    const pf = plume.puffs[j];
+                    pf.age += dt;
+                    if (pf.age >= pf.maxAge) {
+                        pf.mat.dispose();
+                        scene.remove(pf.sprite);
+                        plume.puffs.splice(j, 1);
+                        continue;
+                    }
+                    pf.sprite.position.addScaledVector(pf.vel, dt);
+                    pf.sprite.scale.multiplyScalar(1.0 + dt * 0.38);
+                    pf.mat.color.lerp(_darkSmokeColor, dt * 3.5);
+                    pf.mat.opacity = (1.0 - pf.age / pf.maxAge) * 0.68;
+                }
+            });
+        }
+
+        function fireWeapon(ctrl, wpnMesh) {
+            if (!wpnMesh) return;
+            const now = clock.getElapsedTime();
+            const stateHolder = ctrl ? ctrl.userData : wpnMesh.userData;
+            if (stateHolder.nextShot && now < stateHolder.nextShot) return;
+            stateHolder.nextShot = now + 0.16;
+
+            const handSide = ctrl && ctrl.userData.handedness ? ctrl.userData.handedness : 'both';
+            wpnMesh.userData.recoilZ = 0.042;
+            wpnMesh.userData.recoilRotX = 0.14;
+            wpnMesh.userData.flashAlpha = 1.0;
+            triggerControllerHaptics(handSide, 0.42, 35);
+
+            _rotMatrix.extractRotation(wpnMesh.matrixWorld);
+            const direction = new THREE.Vector3(0, 0, -1).applyMatrix4(_rotMatrix).normalize();
+            const startPos = _v1;
+            wpnMesh.getWorldPosition(startPos);
+
+            if (gameState.isGameOver && gameOverMesh) {
+                const ray = new THREE.Raycaster(startPos, direction);
+                if (ray.intersectObject(gameOverMesh).length > 0) {
+                    resetExperience();
+                }
+                return;
+            }
+
+            if (!gameState.hasJetpack && jetpackPickupGroup.visible) {
+                _v2.subVectors(jetpackPickupGroup.position, startPos);
+                const proj = _v2.dot(direction);
+                if (proj > 0) {
+                    _v3.copy(startPos).addScaledVector(direction, proj);
+                    if (_v3.distanceTo(jetpackPickupGroup.position) < 2.2) {
+                        equipJetpack();
+                        return;
+                    }
+                }
+            }
+
+            sound.playPlayerShoot();
+            const type = getCurrentWeaponType();
+            const hex = weaponColors[type] || 0x00ff00;
+
+            const bGroup = new THREE.Group();
+            bGroup.position.copy(startPos);
+            bGroup.add(new THREE.Mesh(sharedBulletLaserGeo, sharedBulletMats[type] || sharedBulletMats.int));
+            bGroup.add(new THREE.Mesh(sharedBulletCoreGeo, sharedWhiteBasicMat));
+
+            _v2.copy(startPos).add(direction);
+            bGroup.lookAt(_v2);
+            scene.add(bGroup);
+
+            playerBullets.push({
+                mesh: bGroup,
+                vel: direction.multiplyScalar(340.0),
+                type: type,
+                colorHex: hex,
+                damage: 28,
+                life: 3.5
+            });
+        }
+
+        // Lanza la Singularidad de Plasma perseguidora desde delante de la mano derecha de Ultron
+        function fireHandSingularityOrb() {
+            const originPos = _v1;
+            handChargeNode.getWorldPosition(originPos);
+            sound.playBossShoot();
+
+            const orbGroup = new THREE.Group();
+            orbGroup.position.copy(originPos);
+
+            orbGroup.add(new THREE.Mesh(sharedOrbCoreGeo, sharedWhiteBasicMat));
+
+            const cageMesh = new THREE.Mesh(sharedOrbCageGeo, sharedOrbCageMat);
+            orbGroup.add(cageMesh);
+
+            const rings = [];
+            for (let r = 0; r < 3; r++) {
+                const ring = new THREE.Mesh(sharedOrbRingGeos[r], sharedOrbRingMats[r % 2]);
+                orbGroup.add(ring);
+                rings.push(ring);
+            }
+
+            const halo = new THREE.Sprite(sharedOrbHaloMat);
+            halo.scale.set(34, 34, 1);
+            orbGroup.add(halo);
+
+            scene.add(orbGroup);
+
+            const playerPos = getPlayerWorldPos();
+            const initDir = new THREE.Vector3().subVectors(playerPos, originPos).normalize();
+
+            bossBullets.push({
+                mesh: orbGroup,
+                cageMesh,
+                rings,
+                vel: initDir.multiplyScalar(68.0),
+                hp: 40,
+                life: 9.5
+            });
+        }
+
+        // ============================================================================
+        // 12. MOVIMIENTO DEL JUGADOR Y VUELO DEL JETPACK (MITAD DE VELOCIDAD = 29.0)
+        // ============================================================================
+        function getPlayerWorldPos() {
+            return _playerWorldPos.set(playerDolly.position.x, playerDolly.position.y + 1.7, playerDolly.position.z);
+        }
+
+        function updatePlayerAndJetpack(dt, elapsedTime) {
+            const p = gameState.player;
+            if (weaponSwitchCooldown > 0) weaponSwitchCooldown -= dt;
+
+            updateVRGunRecoils(dt);
+
+            if (!gameState.hasJetpack && jetpackPickupGroup.visible) {
+                jetpackPickupGroup.rotation.y += dt * 1.8;
+                jpHoloRing.rotation.z -= dt * 2.4;
+                jetpackPickupGroup.position.y = 1.55 + Math.sin(elapsedTime * 3.2) * 0.22;
+
+                const distToJp = Math.hypot(
+                    playerDolly.position.x - jetpackPickupGroup.position.x,
+                    playerDolly.position.z - jetpackPickupGroup.position.z
+                );
+                if (distToJp < 3.0) {
+                    equipJetpack();
+                }
+            }
+
+            let leftGripThrust = false;
+            let moveX = 0;
+            let moveZ = 0;
+
+            const session = renderer.xr.getSession();
+            if (session) {
+                for (const source of session.inputSources) {
+                    if (!source.gamepad) continue;
+                    const axes = source.gamepad.axes;
+                    let axX = axes.length >= 4 ? axes[2] : (axes[0] || 0);
+                    let axY = axes.length >= 4 ? axes[3] : (axes[1] || 0);
+                    if (Math.abs(axX) < 0.15) axX = 0;
+                    if (Math.abs(axY) < 0.15) axY = 0;
+
+                    if (source.handedness === 'left') {
+                        moveX = axX;
+                        moveZ = axY;
+                        if (source.gamepad.buttons[1] && source.gamepad.buttons[1].pressed) {
+                            leftGripThrust = true;
+                        }
+                    } else if (source.handedness === 'right') {
+                        const stickSwitch = Math.abs(axX) > 0.62;
+                        if (stickSwitch && !rightStickWeaponAxisWasActive && weaponSwitchCooldown <= 0) {
+                            switchWeapon(axX > 0 ? 1 : -1);
+                            weaponSwitchCooldown = 0.25;
+                        }
+                        rightStickWeaponAxisWasActive = stickSwitch;
+                    }
+                }
+            } else {
+                if (keys['KeyW'] || keys['ArrowUp']) moveZ -= 1;
+                if (keys['KeyS'] || keys['ArrowDown']) moveZ += 1;
+                if (keys['KeyD'] || keys['ArrowRight']) moveX += 1;
+                if (keys['KeyA'] || keys['ArrowLeft']) moveX -= 1;
+                if (keys['Space'] || keys['ShiftLeft']) leftGripThrust = true;
+
+                camera.rotation.order = 'YXZ';
+                camera.rotation.y = p.yaw;
+                camera.rotation.x = p.pitch;
+            }
+
+            // Movimiento horizontal libre sin ningún límite circular (en aire o tierra)
+            if (moveX !== 0 || moveZ !== 0) {
+                camera.getWorldDirection(_fwDir);
+                _fwDir.y = 0;
+                if (_fwDir.lengthSq() < 0.001) _fwDir.set(0, 0, -1);
+                _fwDir.normalize();
+                _rtDir.set(-_fwDir.z, 0, _fwDir.x).normalize();
+
+                const airSpeed = (gameState.hasJetpack && playerDolly.position.y > 0.5) ? 44.0 : 22.0;
+                playerDolly.position.addScaledVector(_fwDir, -moveZ * airSpeed * dt);
+                playerDolly.position.addScaledVector(_rtDir, moveX * airSpeed * dt);
+            }
+
+            // Propulsión vertical del Jetpack a la mitad de velocidad (29.0 m/s máx)
+            if (gameState.hasJetpack && leftGripThrust) {
+                p.vel.y = THREE.MathUtils.lerp(p.vel.y, 29.0, dt * 4.5);
+                sound.setJetpackThrusterActive(true, THREE.MathUtils.clamp(playerDolly.position.y / 380.0, 0, 1));
+                triggerControllerHaptics('left', 0.22, 30);
+            } else {
+                p.vel.y = Math.max(-34.0, p.vel.y - 24.0 * dt);
+                sound.setJetpackThrusterActive(false, 0);
+            }
+
+            playerDolly.position.y = Math.min(435.0, playerDolly.position.y + p.vel.y * dt);
+            if (playerDolly.position.y <= 0.0) {
+                playerDolly.position.y = 0.0;
+                p.vel.y = 0.0;
+            }
+
+            if (!session && isMouseDownLeft && gameState.isRunning) {
+                camera.getWorldPosition(_desktopDummyGun.position);
+                camera.getWorldQuaternion(_desktopDummyGun.quaternion);
+                _desktopDummyGun.updateMatrixWorld();
+                _desktopDummyGun.userData = camera.userData;
+                fireWeapon(null, _desktopDummyGun);
+            }
+
+            gameState.cameraShake = Math.max(0, gameState.cameraShake - dt * 2.5);
+            if (!session) {
+                const shakeAmt = gameState.cameraShake * 0.25;
+                camera.position.set(
+                    (Math.random() - 0.5) * shakeAmt,
+                    1.7 + (Math.random() - 0.5) * shakeAmt,
+                    0
+                );
+            }
+        }
+
+        // ============================================================================
+        // 13. DESPERTAR DE ULTRON, MARCHA COLOSAL Y ANIMACIÓN FINAL DE DERROTA
+        // ============================================================================
+        let prevLeftFootDown = false;
+        let prevRightFootDown = false;
+
+        function updateColossalUltronAndStorm(dt, elapsedTime) {
+            const b = gameState.boss;
+
+            // Actualizar uniforms de lluvia en GPU (Cero iteraciones en CPU)
+            rainUniforms.uTime.value = elapsedTime;
+            rainUniforms.uCenterPos.value.copy(playerDolly.position);
+
+            // Relámpagos fractales en las nubes (sólo después de agarrar el Jetpack para mantener la oscuridad inicial)
+            let activeLightningFlash = 0;
+            if (gameState.hasJetpack) {
+                nextLightningTimer -= dt;
+                if (nextLightningTimer <= 0) {
+                    nextLightningTimer = 2.6 + Math.random() * 4.2;
+                    triggerCloudLightning();
+                }
+            }
+
+            for (let i = activeCloudLightnings.length - 1; i >= 0; i--) {
+                const cl = activeCloudLightnings[i];
+                cl.age += dt;
+                if (cl.age >= cl.maxAge) {
+                    cl.coreMat.dispose();
+                    cl.flashMat.dispose();
+                    scene.remove(cl.mesh);
+                    activeCloudLightnings.splice(i, 1);
+                    continue;
+                }
+                const flicker = Math.sin((cl.age / cl.maxAge) * Math.PI) * (0.65 + 0.35 * Math.sin(elapsedTime * 55.0));
+                cl.coreMat.opacity = flicker;
+                cl.flashSprite.material.opacity = flicker * 0.85;
+                activeLightningFlash = Math.max(activeLightningFlash, flicker);
+            }
+            stormFlashLight.intensity = activeLightningFlash * 4.2;
+            stormFlashLight.visible = stormFlashLight.intensity > 0.01;
+
+            // Antes de tomar el Jetpack: oscuridad total, Ultron no se mueve ni se refleja
+            if (!gameState.ultronAwakening) {
+                bootSweepUniform.value = BOOT_START_Y;
+                keyLight.visible = false;
+                rimLightBlue.visible = false;
+                chestReactorLight.visible = false;
+                handPlasmaLight.visible = false;
+                bootScannerLight.visible = false;
+                return;
+            }
+
+            gameState.sequenceTime += dt;
+
+            // FASE 1: ENCENDIDO PROGRESIVO EN LA OSCURIDAD (SIN CAMINAR TODAVÍA)
+            if (gameState.sequenceTime <= BOOT_DURATION) {
+                const bootProgress = THREE.MathUtils.clamp(gameState.sequenceTime / BOOT_DURATION, 0, 1);
+                const easedBoot = THREE.MathUtils.smoothstep(bootProgress, 0.0, 1.0);
+                const currentY = THREE.MathUtils.lerp(BOOT_START_Y, BOOT_END_Y, easedBoot);
+                bootSweepUniform.value = currentY;
+
+                bootScannerLight.position.set(b.pos.x, Math.max(2, currentY), b.pos.z + 45);
+                bootScannerLight.intensity = Math.sin(bootProgress * Math.PI) * 7.5;
+                bootScannerLight.visible = bootScannerLight.intensity > 0.01;
+
+                keyLight.intensity = 1.35 * easedBoot;
+                keyLight.visible = keyLight.intensity > 0.01;
+                rimLightBlue.intensity = 2.4 * easedBoot;
+                rimLightBlue.visible = rimLightBlue.intensity > 0.01;
+
+                chestReactorLight.position.set(b.pos.x, 260, b.pos.z + 35);
+                chestReactorLight.intensity = 4.2 * THREE.MathUtils.smoothstep(currentY, 180, 310);
+                chestReactorLight.visible = chestReactorLight.intensity > 0.01;
+
+                handPlasmaLight.position.set(b.pos.x - 45, 220, b.pos.z + 45);
+                handPlasmaLight.intensity = 3.5 * THREE.MathUtils.smoothstep(currentY, 160, 290);
+                handPlasmaLight.visible = handPlasmaLight.intensity > 0.01;
+
+                // Activar los halos volumétricos sólo cuando el barrido vertical los alcanza
+                ultronVolumetricSprites.forEach(vs => {
+                    if (!vs.active) {
+                        vs.sprite.visible = false;
+                        return;
+                    }
+                    const worldEstY = (vs.localYEstimate + LOCAL_GROUND_OFFSET_Y) * COLOSSAL_SCALE;
+                    const mask = THREE.MathUtils.smoothstep(currentY, worldEstY - 12, worldEstY + 12);
+                    vs.mat.opacity = mask * 0.48;
+                    vs.sprite.visible = vs.mat.opacity > 0.01;
+                });
+
+                wetFloor.material.envMapIntensity = 0.22 * easedBoot;
+
+                colossalCloudLayers.forEach(cl => {
+                    cl.mat.opacity = cl.baseOpacity * easedBoot + activeLightningFlash * 0.14;
+                    cl.mesh.visible = cl.mat.opacity > 0.005;
+                    cl.mesh.position.x = cl.baseX + Math.sin(elapsedTime * 0.08 + cl.phase) * 35;
+                });
+
+                animatedTurbines.forEach((rotor, idx) => {
+                    rotor.rotation.z -= dt * (3.2 + idx * 0.5) * easedBoot;
+                });
+
+                applyWalkGaitFrame(0, false, 0, 0, 0, 0);
+                headGroup.rotation.x += (1.0 - easedBoot) * 0.22;
+                return;
+            }
+
+            // FASE 2: ULTRON 100% ENCENDIDO -> MUESTRA BARRA DE MECHA ULTRON Y EMPIEZA A CAMINAR
+            if (!gameState.ultronFullyAwake) {
+                gameState.ultronFullyAwake = true;
+                bootSweepUniform.value = BOOT_END_Y + 50.0;
+                bootScannerLight.intensity = 0.0;
+                bootScannerLight.visible = false;
+                wetFloor.material.envMapIntensity = 0.25;
+                const bossBarWrap = document.getElementById('boss-bar-wrapper');
+                if (bossBarWrap) bossBarWrap.style.opacity = '1';
+                sound.playUltronVoiceChord();
+            }
+
+            colossalCloudLayers.forEach(cl => {
+                cl.mat.opacity = cl.baseOpacity + activeLightningFlash * 0.16;
+                cl.mesh.visible = cl.mat.opacity > 0.005;
+                cl.mesh.position.x = cl.baseX + Math.sin(elapsedTime * 0.08 + cl.phase) * 35;
+            });
+
+            // FASE 3: CINEMÁTICA DE DERROTA (SE HINCA LENTAMENTE, CAE CON REBOTE PESADO Y SE APAGA)
+            if (b.defeatState !== 'NONE') {
+                b.defeatTimer += dt;
+                handChargeNode.scale.setScalar(0.001);
+
+                if (b.defeatTimer < 6.0) {
+                    // Etapa 1 (0.0s a 5.0s): Se hinca lentamente con temblor estructural; (5.0s a 6.0s): Pausa de agonía
+                    const kt = smoothStep01(Math.min(1.0, b.defeatTimer / 5.0));
+                    const struggleTremor = Math.sin(elapsedTime * 22.0) * 0.014 * (1.0 - kt * 0.5);
+
+                    legJoints.left.hip.rotation.x = THREE.MathUtils.lerp(0.10, -0.92, kt);
+                    legJoints.left.knee.rotation.x = THREE.MathUtils.lerp(0.15, 1.72, kt);
+                    legJoints.left.ankle.rotation.x = THREE.MathUtils.lerp(-0.10, -0.65, kt);
+
+                    legJoints.right.hip.rotation.x = THREE.MathUtils.lerp(-0.10, -0.68, kt);
+                    legJoints.right.knee.rotation.x = THREE.MathUtils.lerp(0.15, 1.55, kt);
+                    legJoints.right.ankle.rotation.x = THREE.MathUtils.lerp(-0.10, -0.55, kt);
+
+                    torsoGroup.rotation.x = THREE.MathUtils.lerp(POSES.walk.torsoRot.x, 0.44, kt) + struggleTremor;
+                    torsoGroup.rotation.z = struggleTremor * 1.5;
+                    headGroup.rotation.x = THREE.MathUtils.lerp(POSES.walk.headRot.x, 0.52, kt);
+
+                    // Los brazos caen pesados y sin fuerza hacia adelante
+                    leftShoulderPivot.rotation.x = THREE.MathUtils.lerp(POSES.walk.leftShoulder.x, 0.42, kt);
+                    leftElbowPivot.rotation.x = THREE.MathUtils.lerp(POSES.walk.leftElbow.x, -0.18, kt);
+                    rightShoulderPivot.rotation.x = THREE.MathUtils.lerp(POSES.walk.rightShoulder.x, 0.36, kt);
+                    rightElbowPivot.rotation.x = THREE.MathUtils.lerp(POSES.walk.rightElbow.x, -0.22, kt);
+
+                    ultronRoot.position.y = THREE.MathUtils.lerp(0, -1.24, kt);
+                    ultronRoot.rotation.x = THREE.MathUtils.lerp(0, 0.08, kt);
+
+                    if (b.defeatTimer > 4.6 && !b.kneelImpactDone) {
+                        b.kneelImpactDone = true;
+                        triggerFootStomp(b.pos.x, b.pos.z + 30, 0);
+                    }
+                } else if (b.defeatTimer < 10.4) {
+                    // Etapa 2 (6.0s a 8.4s): Caída acelerada por gravedad; (8.4s a 10.4s): Rebote pesado del coloso
+                    const fallDuration = 2.4;
+                    const localFallT = b.defeatTimer - 6.0;
+
+                    if (localFallT <= fallDuration) {
+                        const ft = THREE.MathUtils.clamp(localFallT / fallDuration, 0, 1);
+                        // Curva cúbica de aceleración gravitacional
+                        const fallCurve = ft * ft * (0.35 + 0.65 * ft);
+
+                        ultronRoot.rotation.x = THREE.MathUtils.lerp(0.08, 1.50, fallCurve);
+                        ultronRoot.position.y = THREE.MathUtils.lerp(-1.24, -3.14, fallCurve);
+                        ultronRoot.position.z = THREE.MathUtils.lerp(0, 1.72, fallCurve);
+
+                        torsoGroup.rotation.x = THREE.MathUtils.lerp(0.44, 0.12, fallCurve);
+                        headGroup.rotation.x = THREE.MathUtils.lerp(0.52, 0.20, fallCurve);
+                    } else {
+                        // Impacto principal contra el suelo en t = 8.4s
+                        if (!b.collapseImpactDone) {
+                            b.collapseImpactDone = true;
+                            triggerFootStomp(b.pos.x, b.pos.z + 115, 1);
+                            sound.playTurbineDestroyed();
+                            gameState.cameraShake = Math.min(2.2, gameState.cameraShake + 1.35);
+                            triggerControllerHaptics('both', 1.0, 420);
+                        }
+
+                        // Rebote físico pesado (8.4s a 10.4s): sube por la reacción elástica del chasis y vuelve a caer
+                        const bounceElapsed = localFallT - fallDuration;
+                        let bounceArc = 0;
+                        if (bounceElapsed < 0.95) {
+                            // Primer rebote pesado hacia arriba y caída secundaria
+                            const bt = bounceElapsed / 0.95;
+                            bounceArc = Math.sin(bt * Math.PI) * 0.14;
+                        } else if (bounceElapsed < 1.55) {
+                            // Segundo impacto al terminar el rebote en bounceElapsed = 0.95s
+                            if (!b.bounceImpactDone) {
+                                b.bounceImpactDone = true;
+                                triggerFootStomp(b.pos.x, b.pos.z + 115, 0);
+                            }
+                            // Micro-rebote residual de asentamiento
+                            const bt2 = (bounceElapsed - 0.95) / 0.60;
+                            bounceArc = Math.sin(bt2 * Math.PI) * 0.032;
+                        }
+
+                        ultronRoot.rotation.x = 1.50 - bounceArc * 1.15;
+                        ultronRoot.position.y = -3.14 + bounceArc * 2.4;
+                        ultronRoot.position.z = 1.72;
+
+                        // Sacudida secundaria en cabeza y brazos durante el rebote
+                        headGroup.rotation.x = 0.20 - bounceArc * 1.8;
+                        leftShoulderPivot.rotation.z = 0.18 + bounceArc * 1.4;
+                        rightShoulderPivot.rotation.z = -0.32 - bounceArc * 1.4;
+                    }
+                } else {
+                    // Etapa 3 (10.4s a 13.8s): Ya inerte en el suelo, se apaga progresivamente con parpadeo final
+                    if (!b.powerDownSoundDone) {
+                        b.powerDownSoundDone = true;
+                        sound.playPowerDownCollapse();
+                    }
+
+                    const pt = THREE.MathUtils.clamp((b.defeatTimer - 10.4) / 3.4, 0, 1);
+                    const flicker = pt < 0.65 ? (0.85 + 0.15 * Math.sin(elapsedTime * 38.0)) : 1.0;
+                    const powerRemain = Math.pow(1.0 - pt, 1.5) * flicker;
+
+                    materials.emissiveCore.emissiveIntensity = 2.2 * powerRemain;
+                    materials.emissiveDeep.emissiveIntensity = 1.4 * powerRemain;
+                    materials.emissiveHot.emissiveIntensity = 2.8 * powerRemain;
+                    chestReactorLight.intensity = 4.2 * powerRemain;
+                    chestReactorLight.visible = chestReactorLight.intensity > 0.01;
+                    handPlasmaLight.intensity = 3.5 * powerRemain;
+                    handPlasmaLight.visible = handPlasmaLight.intensity > 0.01;
+                    lightningGroup.visible = powerRemain > 0.18;
+
+                    ultronVolumetricSprites.forEach(vs => {
+                        if (vs.active) {
+                            vs.mat.opacity = 0.48 * powerRemain;
+                            vs.sprite.visible = vs.mat.opacity > 0.01;
+                        }
+                    });
+
+                    if (pt >= 1.0 && !gameState.isGameOver) {
+                        b.defeatState = 'POWERED_OFF';
+                        endExperience(true);
+                    }
+                }
+                return;
+            }
+
+            // CAMINATA COLOSAL HACIA EL JUGADOR + GIRO SUAVE
+            gameState.walkTime += dt;
+            const stepped = getSteppedGaitPhase(gameState.walkTime);
+            const { leftGait, rightGait } = applyWalkGaitFrame(stepped.gaitPhase, stepped.isPaused);
+
+            const playerPos = getPlayerWorldPos();
+            const toPlayerX = playerPos.x - b.pos.x;
+            const toPlayerZ = playerPos.z - b.pos.z;
+            const targetYaw = Math.atan2(toPlayerX, toPlayerZ);
+            b.facingYaw = THREE.MathUtils.lerp(b.facingYaw, targetYaw, dt * 0.45);
+            colossalUltronAnchor.rotation.y = b.facingYaw;
+
+            if (!stepped.isPaused) {
+                const walkSpeed = 11.5; // Avance colosal constante
+                b.pos.x += Math.sin(b.facingYaw) * walkSpeed * dt;
+                b.pos.z += Math.cos(b.facingYaw) * walkSpeed * dt;
+                colossalUltronAnchor.position.set(b.pos.x, 0, b.pos.z);
+            }
+
+            if (leftGait && leftGait.isImpactFrame && !prevLeftFootDown) {
+                triggerFootStomp(b.pos.x + 25, b.pos.z + leftGait.footForwardZ * COLOSSAL_SCALE, 0);
+            }
+            if (rightGait && rightGait.isImpactFrame && !prevRightFootDown) {
+                triggerFootStomp(b.pos.x - 25, b.pos.z + rightGait.footForwardZ * COLOSSAL_SCALE, 1);
+            }
+            prevLeftFootDown = leftGait ? leftGait.isImpactFrame : false;
+            prevRightFootDown = rightGait ? rightGait.isImpactFrame : false;
+
+            animatedTurbines.forEach((rotor, idx) => {
+                if (rotor.userData.destroyed) return;
+                rotor.rotation.z -= dt * (3.8 + idx * 0.6);
+            });
+
+            // Regenerar continuamente los arcos fractales de la mano derecha (estilo relámpago de nube)
+            handFractalArcs.forEach((arc) => {
+                arc.timer -= dt;
+                if (arc.timer <= 0) {
+                    arc.timer = 0.055 + Math.random() * 0.065;
+                    rebuildHandFractalArc(arc);
+                }
+            });
+
+            // ATAQUE DE SINGULARIDAD PERSEGUIDORA CARGADA DELANTE DE SU MANO DERECHA
+            b.handAttackTimer -= dt;
+            if (b.handAttackState === 'COOLDOWN') {
+                handChargeNode.scale.setScalar(0.001);
+                if (b.handAttackTimer <= 0) {
+                    b.handAttackState = 'CHARGING';
+                    b.handAttackTimer = 2.4;
+                    sound.playBossHandCharge();
+                }
+            } else if (b.handAttackState === 'CHARGING') {
+                const chargeRatio = THREE.MathUtils.clamp(1.0 - (b.handAttackTimer / 2.4), 0.05, 1.0);
+                handChargeNode.scale.setScalar(chargeRatio * 1.35);
+                handSingularityShell.rotation.y += dt * 6.0;
+                handGyroRings.forEach((r, idx) => {
+                    r.rotation.x += dt * (4 + idx * 2);
+                    r.rotation.y -= dt * (3 + idx * 2);
+                });
+
+                if (b.handAttackTimer <= 0) {
+                    fireHandSingularityOrb();
+                    b.handAttackState = 'COOLDOWN';
+                    b.handAttackTimer = 5.2;
+                }
+            }
+
+            chestReactorLight.position.set(b.pos.x, 260, b.pos.z + 35);
+            handPlasmaLight.position.set(b.pos.x - 45, 220, b.pos.z + 45);
+
+            stompShockwaves.forEach(sw => {
+                if (sw.active) {
+                    sw.age += dt * 1.4;
+                    sw.mesh.scale.setScalar(1.0 + sw.age * 7.5);
+                    sw.mesh.material.opacity = Math.max(0, 0.85 * (1.0 - sw.age));
+                    if (sw.age >= 1.0) sw.active = false;
+                }
+            });
+        }
+
+        // ============================================================================
+        // 14. COMBATE, COLISIONES EN LAS 4 TURBINAS Y PARTÍCULAS
+        // ============================================================================
+        function damagePlayer(amount) {
+            if (!gameState.isRunning || gameState.isGameOver) return;
+            gameState.player.hp = Math.max(0, gameState.player.hp - amount);
+            gameState.cameraShake = Math.min(1.5, gameState.cameraShake + 0.55);
+            triggerControllerHaptics('both', 0.9, 180);
+
+            const overlay = document.getElementById('damage-overlay');
+            if (overlay) {
+                overlay.style.opacity = '1';
+                setTimeout(() => { overlay.style.opacity = '0'; }, 180);
+            }
+
+            if (gameState.player.hp <= 0) {
+                endExperience(false);
+            }
+        }
+
+        function updateCombatAndParticles(dt, elapsedTime) {
+            const playerWorldPos = getPlayerWorldPos();
+
+            // Balas del jugador contra las 4 turbinas ARC y contra los orbes perseguidores
+            for (let i = playerBullets.length - 1; i >= 0; i--) {
+                const pb = playerBullets[i];
+                pb.life -= dt;
+                pb.mesh.position.addScaledVector(pb.vel, dt);
+
+                let hit = false;
+
+                // 1. ¿Impactó contra un orbe perseguidor de Ultron?
+                for (let j = bossBullets.length - 1; j >= 0; j--) {
+                    const bb = bossBullets[j];
+                    if (pb.mesh.position.distanceTo(bb.mesh.position) < 9.5) {
+                        hit = true;
+                        bb.hp -= pb.damage;
+                        spawnParticles(pb.mesh.position, pb.colorHex, 10, 22, 1.2);
+                        if (bb.hp <= 0) {
+                            spawnParticles(bb.mesh.position, 0xff5500, 35, 38, 2.2);
+                            scene.remove(bb.mesh);
+                            bossBullets.splice(j, 1);
+                        }
+                        break;
+                    }
+                }
+
+                // 2. ¿Impactó contra alguna de las 4 turbinas vulnerables de Ultron?
+                if (!hit && gameState.ultronFullyAwake && gameState.boss.defeatState === 'NONE') {
+                    for (const vt of vulnerableTurbines) {
+                        if (vt.destroyed) continue;
+                        vt.group.getWorldPosition(_turbineWorldPos);
+                        const hitRadius = 21.5; // Radio adaptado a la escala 50.0
+                        if (pb.mesh.position.distanceTo(_turbineWorldPos) < hitRadius) {
+                            hit = true;
+                            if (pb.type === vt.type) {
+                                vt.hp = Math.max(0, vt.hp - pb.damage);
+                                sound.playCriticalHit();
+                                spawnParticles(pb.mesh.position, vt.colorHex, 22, 34, 1.8);
+
+                                // Actualizar vida global de Mecha Ultron como la suma de las 4 turbinas
+                                let totalHp = 0;
+                                vulnerableTurbines.forEach(t => totalHp += t.hp);
+                                gameState.boss.hp = totalHp;
+
+                                if (vt.hp <= 0 && !vt.destroyed) {
+                                    vt.destroyed = true;
+                                    vt.rotorGroup.userData.destroyed = true;
+                                    vt.glowRingOuter.material = materials.darkJoint;
+                                    vt.glowRingInner.material = materials.darkJoint;
+                                    vt.centerEye.material = materials.darkJoint;
+                                    if (vt.glowSprite) {
+                                        vt.glowSprite.visible = false;
+                                        ultronVolumetricSprites.forEach(s => {
+                                            if (s.sprite === vt.glowSprite) s.active = false;
+                                        });
+                                    }
+                                    triggerTurbineExplosion(_turbineWorldPos, vt.colorHex, vt);
+
+                                    if (vulnerableTurbines.every(t => t.destroyed)) {
+                                        gameState.boss.hp = 0;
+                                        gameState.boss.defeatState = 'DYING';
+                                        gameState.boss.defeatTimer = 0;
+                                    }
+                                }
+                            } else {
+                                sound.playArmorRicochet();
+                                spawnParticles(pb.mesh.position, 0xffaa00, 8, 16, 1.0);
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                if (hit || pb.life <= 0) {
+                    scene.remove(pb.mesh);
+                    playerBullets.splice(i, 1);
+                }
+            }
+
+            // Actualizar los orbes de singularidad perseguidores de Ultron
+            for (let i = bossBullets.length - 1; i >= 0; i--) {
+                const bb = bossBullets[i];
+                bb.life -= dt;
+
+                _v1.subVectors(playerWorldPos, bb.mesh.position).normalize();
+                const currentSpeed = bb.vel.length();
+                bb.vel.normalize().lerp(_v1, dt * 1.85).normalize().multiplyScalar(currentSpeed);
+                bb.mesh.position.addScaledVector(bb.vel, dt);
+
+                bb.cageMesh.rotation.x += dt * 4.5;
+                bb.cageMesh.rotation.y += dt * 5.5;
+                bb.rings.forEach((r, idx) => {
+                    r.rotation.x += dt * (5 + idx * 2);
+                    r.rotation.z -= dt * (4 + idx * 2);
+                });
+
+                if (bb.mesh.position.distanceTo(playerWorldPos) < 5.5) {
+                    damagePlayer(22);
+                    spawnParticles(bb.mesh.position, 0xff4500, 32, 34, 2.0);
+                    scene.remove(bb.mesh);
+                    bossBullets.splice(i, 1);
+                    continue;
+                }
+
+                if (bb.life <= 0 || bb.mesh.position.y < 0.5) {
+                    spawnParticles(bb.mesh.position, 0xff3300, 20, 24, 1.6);
+                    scene.remove(bb.mesh);
+                    bossBullets.splice(i, 1);
+                }
+            }
+
+            updateTurbineExplosionsAndSmoke(dt);
+
+            // Actualizar partículas instanciadas
+            let anyUpdated = false;
+            for (let i = 0; i < MAX_PARTICLES; i++) {
+                const pt = particlePool[i];
+                if (!pt.active) continue;
+                anyUpdated = true;
+                pt.life -= dt;
+                if (pt.life <= 0) {
+                    pt.active = false;
+                    dummyObj.scale.setScalar(0);
+                    dummyObj.updateMatrix();
+                    sparkInstancedMesh.setMatrixAt(i, dummyObj.matrix);
+                    continue;
+                }
+                pt.vel.y -= 24.0 * dt;
+                pt.pos.addScaledVector(pt.vel, dt);
+                dummyObj.position.copy(pt.pos);
+                dummyObj.scale.setScalar(pt.scale * (pt.life / pt.maxLife));
+                dummyObj.updateMatrix();
+                sparkInstancedMesh.setMatrixAt(i, dummyObj.matrix);
+            }
+            if (anyUpdated) sparkInstancedMesh.instanceMatrix.needsUpdate = true;
+        }
+
+        // ============================================================================
+        // 15. HUD MINIMALISTA Y CONTADOR DE FPS CON DIRTY-CHECKING
+        // ============================================================================
+        function updateAllHUDs() {
+            const p = gameState.player;
+            const b = gameState.boss;
+
+            const roundedPlayerHp = Math.round(p.hp);
+            const roundedBossHp = Math.round(b.hp);
+
+            // Sólo actualizar DOM y CanvasTexture en GPU cuando algún valor realmente haya cambiado
+            if (
+                roundedPlayerHp === lastHudPlayerHp &&
+                roundedBossHp === lastHudBossHp &&
+                currentFps === lastHudFps &&
+                gameState.ultronFullyAwake === lastHudAwake
+            ) {
+                return;
+            }
+
+            lastHudPlayerHp = roundedPlayerHp;
+            lastHudBossHp = roundedBossHp;
+            lastHudFps = currentFps;
+            lastHudAwake = gameState.ultronFullyAwake;
+
+            const playerBarEl = document.getElementById('player-hp-bar');
+            if (playerBarEl) playerBarEl.style.width = `${(p.hp / p.maxHp) * 100}%`;
+
+            const bossBarEl = document.getElementById('boss-hp-bar');
+            if (bossBarEl) bossBarEl.style.width = `${(b.hp / b.maxHp) * 100}%`;
+
+            const fpsCounterEl = document.getElementById('fps-counter');
+            if (fpsCounterEl) fpsCounterEl.textContent = `FPS: ${currentFps}`;
+
+            // Renderizar HUD 3D en el visor VR (512x168)
+            vrHudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
+
+            const centerX = hudCanvas.width / 2;
+            const bossBarW = 240;
+            const bossBarH = 10;
+            const bossBarX = centerX - bossBarW / 2;
+            const bossBarY = 24;
+
+            if (gameState.ultronFullyAwake) {
+                vrHudCtx.textAlign = 'center';
+                vrHudCtx.fillStyle = '#f87171';
+                vrHudCtx.font = 'bold 12px Orbitron, Courier New';
+                vrHudCtx.fillText('MECHA ULTRON', centerX, bossBarY - 5);
+
+                vrHudCtx.fillStyle = 'rgba(60, 5, 10, 0.78)';
+                vrHudCtx.fillRect(bossBarX, bossBarY, bossBarW, bossBarH);
+                vrHudCtx.strokeStyle = '#ef4444';
+                vrHudCtx.lineWidth = 1.5;
+                vrHudCtx.strokeRect(bossBarX, bossBarY, bossBarW, bossBarH);
+
+                vrHudCtx.fillStyle = '#ef4444';
+                vrHudCtx.fillRect(bossBarX + 1, bossBarY + 1, Math.max(0, (b.hp / b.maxHp) * (bossBarW - 2)), bossBarH - 2);
+            }
+
+            // Barra Verde de Vida del Jugador (siempre visible desde el inicio)
+            const playerBarW = 148;
+            const playerBarH = 7;
+            const playerBarX = centerX - playerBarW / 2;
+            const playerBarY = 42;
+
+            vrHudCtx.fillStyle = 'rgba(5, 40, 20, 0.75)';
+            vrHudCtx.fillRect(playerBarX, playerBarY, playerBarW, playerBarH);
+            vrHudCtx.strokeStyle = '#22c55e';
+            vrHudCtx.lineWidth = 1.2;
+            vrHudCtx.strokeRect(playerBarX, playerBarY, playerBarW, playerBarH);
+            vrHudCtx.fillStyle = '#22c55e';
+            vrHudCtx.fillRect(playerBarX + 1, playerBarY + 1, Math.max(0, (p.hp / p.maxHp) * (playerBarW - 2)), playerBarH - 2);
+
+            // Imprimir FPS en medio del visor VR
+            vrHudCtx.textAlign = 'center';
+            vrHudCtx.fillStyle = '#00f3ff';
+            vrHudCtx.font = 'bold 13px Orbitron, Courier New';
+            vrHudCtx.fillText(`FPS: ${currentFps}`, centerX, playerBarY + playerBarH + 18);
+
+            vrHudTex.needsUpdate = true;
+        }
+
+        // ============================================================================
+        // 16. EVENTOS DE TECLADO, RATÓN Y BOTÓN DE INICIO
+        // ============================================================================
+        function endExperience(playerWon) {
+            gameState.isGameOver = true;
+            if (gameOverMesh) {
+                camera.remove(gameOverMesh);
+                gameOverMesh = null;
+            }
+            const endCanvas = document.createElement('canvas');
+            endCanvas.width = 1024;
+            endCanvas.height = 512;
+            const ctx = endCanvas.getContext('2d');
+            ctx.fillStyle = 'rgba(5, 8, 15, 0.92)';
+            ctx.fillRect(0, 0, 1024, 512);
+            ctx.strokeStyle = playerWon ? '#22c55e' : '#ef4444';
+            ctx.lineWidth = 12;
+            ctx.strokeRect(10, 10, 1004, 492);
+            ctx.textAlign = 'center';
+            ctx.fillStyle = playerWon ? '#4ade80' : '#f87171';
+            ctx.font = 'bold 68px Orbitron, Courier New';
+            ctx.fillText(playerWon ? 'MECHA ULTRON DESTRUIDO' : 'SISTEMA CAÍDO', 512, 210);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 42px Courier New';
+            ctx.fillText('[ DISPARA AQUÍ PARA REINICIAR ]', 512, 340);
+
+            gameOverMesh = new THREE.Mesh(
+                new THREE.PlaneGeometry(1.6, 0.8),
+                new THREE.MeshBasicMaterial({
+                    map: new THREE.CanvasTexture(endCanvas),
+                    transparent: true,
+                    depthTest: false,
+                    depthWrite: false,
+                    fog: false
+                })
+            );
+            gameOverMesh.renderOrder = 1002;
+            gameOverMesh.position.set(0, 0, -1.5);
+            camera.add(gameOverMesh);
+        }
+
+        function resetExperience() {
+            if (gameOverMesh) {
+                camera.remove(gameOverMesh);
+                gameOverMesh = null;
+            }
+            gameState.isGameOver = false;
+            gameState.hasJetpack = false;
+            gameState.ultronAwakening = false;
+            gameState.ultronFullyAwake = false;
+            gameState.sequenceTime = 0;
+            gameState.walkTime = 0;
+            gameState.player.hp = 100;
+            gameState.player.vel.set(0, 0, 0);
+            playerDolly.position.set(0, 0, 44);
+
+            gameState.boss.hp = 1200;
+            gameState.boss.pos.set(0, 0, -235);
+            gameState.boss.facingYaw = 0;
+            gameState.boss.defeatState = 'NONE';
+            gameState.boss.defeatTimer = 0;
+            gameState.boss.kneelImpactDone = false;
+            gameState.boss.collapseImpactDone = false;
+            gameState.boss.bounceImpactDone = false;
+            gameState.boss.powerDownSoundDone = false;
+
+            colossalUltronAnchor.visible = false;
+            colossalUltronAnchor.position.set(0, 0, -235);
+            colossalUltronAnchor.rotation.set(0, 0, 0);
+            ultronRoot.position.set(0, 0, 0);
+            ultronRoot.rotation.set(0, 0, 0);
+            jetpackPickupGroup.visible = true;
+            jpPointLight.visible = true;
+            lightningGroup.visible = true;
+            wetFloor.material.envMapIntensity = 0.0;
+
+            materials.emissiveCore.emissiveIntensity = 2.2;
+            materials.emissiveDeep.emissiveIntensity = 1.4;
+            materials.emissiveHot.emissiveIntensity = 2.8;
+
+            const bossBarWrap = document.getElementById('boss-bar-wrapper');
+            if (bossBarWrap) bossBarWrap.style.opacity = '0';
+
+            vulnerableTurbines.forEach(vt => {
+                vt.hp = vt.maxHp;
+                vt.destroyed = false;
+                vt.rotorGroup.userData.destroyed = false;
+                vt.glowRingOuter.material = vt.coreMat;
+                vt.glowRingInner.material = vt.hotMat;
+                vt.centerEye.material = vt.hotMat;
+                if (vt.glowSprite) vt.glowSprite.visible = false;
+            });
+            ultronVolumetricSprites.forEach(vs => {
+                vs.active = true;
+                vs.mat.opacity = 0;
+                vs.sprite.visible = false;
+            });
+            colossalCloudLayers.forEach(cl => {
+                cl.mat.opacity = 0;
+                cl.mesh.visible = false;
+            });
+
+            applyPoseImmediate();
+        }
+
+        window.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+            if (e.code === 'KeyE') switchWeapon(1);
+            if (e.code === 'KeyQ') switchWeapon(-1);
+        });
+
+        window.addEventListener('keyup', (e) => {
+            keys[e.code] = false;
+        });
+
+        window.addEventListener('wheel', (e) => {
+            if (!gameState.isRunning) return;
+            switchWeapon(e.deltaY > 0 ? 1 : -1);
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!gameState.isRunning || document.pointerLockElement !== canvas) return;
+            const sens = 0.0021;
+            gameState.player.yaw -= e.movementX * sens;
+            gameState.player.pitch = THREE.MathUtils.clamp(gameState.player.pitch - e.movementY * sens, -Math.PI / 2.1, Math.PI / 2.1);
+        });
+
+        window.addEventListener('mousedown', (e) => {
+            if (e.button === 0) {
+                isMouseDownLeft = true;
+                if (gameState.isGameOver) {
+                    resetExperience();
+                    return;
+                }
+                if (document.body.classList.contains('game-active') && !renderer.xr.isPresenting && document.pointerLockElement !== canvas) {
+                    canvas.requestPointerLock();
+                }
+            }
+            if (e.button === 2 && gameState.isRunning) {
+                switchWeapon(1);
+            }
+        });
+
+        window.addEventListener('mouseup', (e) => {
+            if (e.button === 0) isMouseDownLeft = false;
+        });
+
+        window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        document.getElementById('start-btn').addEventListener('click', () => {
+            document.body.classList.add('game-active');
+            sound.init();
+            gameState.isRunning = true;
+            if (vrButton && !renderer.xr.isPresenting) {
+                vrButton.click();
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // ============================================================================
+        // 17. BUCLE PRINCIPAL WEBXR (`renderer.setAnimationLoop`)
+        // ============================================================================
+        renderer.setAnimationLoop(() => {
+            const nowPerf = performance.now();
+            fpsFrameCount++;
+            if (nowPerf - fpsLastTime >= 250) {
+                currentFps = Math.round((fpsFrameCount * 1000) / (nowPerf - fpsLastTime));
+                fpsFrameCount = 0;
+                fpsLastTime = nowPerf;
+            }
+
+            const dt = Math.min(clock.getDelta(), 0.05);
+            const elapsedTime = clock.getElapsedTime();
+
+            if (gameState.isRunning) {
+                updatePlayerAndJetpack(dt, elapsedTime);
+
+                if (rightController && rightController.userData.isSelecting) fireWeapon(rightController, rightWeaponMesh);
+                if (leftController && leftController.userData.isSelecting) fireWeapon(leftController, leftWeaponMesh);
+
+                updateColossalUltronAndStorm(dt, elapsedTime);
+                updateCombatAndParticles(dt, elapsedTime);
+                updateAllHUDs();
+            }
+
+            renderer.render(scene, camera);
+        });
+    </script>
+</body>
+</html>

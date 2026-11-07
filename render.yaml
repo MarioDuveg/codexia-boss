@@ -1,0 +1,7 @@
+# Render Blueprint: sitio estático, sin servidor ni dependencias de Node.js.
+services:
+  - type: web
+    name: ultron-colossal-awakening-vr
+    runtime: static
+    buildCommand: echo "Sitio HTML estatico: no requiere compilacion"
+    staticPublishPath: ./public
