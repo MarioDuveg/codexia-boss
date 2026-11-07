@@ -1,14 +1,29 @@
-# Integración de Batalla final — CODEXIA
+# Integración de Batalla Final CODEXIA — corrección de publicación
 
-**Juego:** ULTRON: COLOSSAL AWAKENING VR  
-**Equipos:** 1 a 20, elegidos con `− / +` antes de iniciar  
-**Cronómetro:** 4 minutos, inicia cuando comienza el despertar de Ultron  
-**Objetivo:** destruir las cuatro turbinas dentro del límite  
+Se detectó una suposición no confirmada en la versión previa: `registrar_taller(p_equipo,p_taller,p_puntaje)` se invocaba con `p_taller=5`. La documentación original describía talleres 1–4, pero no comprobaba la implementación de la rama 5 en Supabase. Esto **podría explicar** que `batalla_final` continúe en 0. No es posible establecer la causa exacta sin registros de errores o acceso al proyecto.
 
-**Correspondencias:** amarillo → rojo; rojo → verde; verde → azul; azul → amarillo. Otros disparos hacen cero daño; cada turbina posee 900 HP.
+Para evitar depender de esa suposición se agregó una **función RPC dedicada** `registrar_batalla_final(integer,numeric)` que se instala mediante `SQL/01_REGISTRAR_BATALLA_FINAL.sql`.
 
-**Nota (solo al ganar):** `redondear(100 × (0.40 × precisión + 0.35 × vida_conservada + 0.25 × rapidez))`. Precisión = aciertos correctos sobre disparos realizados desde el despertar; vida conservada = máximo de cero o uno menos daño recibido/100; rapidez = máximo de cero o uno menos segundos usados/240. Al perder o acabarse el tiempo, la nota es 0.
+- Equipo 1–20; nota 0–100.
+- Mantiene el mejor puntaje en `batalla_final` (`GREATEST`).
+- No reescribe los cuatro talleres anteriores.
+- Inserta la fila del equipo si no existía.
+- Actualiza `total` cuando es columna normal; si `total` es GENERATED, deja que PostgreSQL lo calcule.
+- Retorna el `batalla_final` realmente almacenado.
+- Concede ejecución a `anon`, sin login, usando la clave pública (no service_role).
 
-**Registro:** `POST https://zgpfcmvjmjfaphtudmis.supabase.co/rest/v1/rpc/registrar_taller` con `p_equipo` (1–20), `p_taller: 5`, `p_puntaje` (0–100). Uso de la clave **publishable** provista; no requiere login. La función SQL debe aceptar el taller 5, tener permisos para `anon` y conservar el mayor resultado para `public.scores.batalla_final`. El juego muestra el estado de publicación, sin afirmar que se guardó si hay error.
+**PostgreSQL:** SQL Editor → ejecutar el contenido del archivo. Luego volver a desplegar el juego; el HTML llamará a `POST /rest/v1/rpc/registrar_batalla_final` con `{"p_equipo":7,"p_puntaje":95}` en el ejemplo de formato **sin enviar ese ejemplo**. `200 OK` sin valor numérico válido ya no se considera confirmación. Un fallo conserva el registro pendiente localmente.
 
-**Para compartir:** publicar el contenido completo del ZIP en GitHub/Render (sitio estático con directorio `public`), incluidos sus MP3. No se envían notas de prueba y se requiere verificar los permisos reales de Supabase.
+## Comprobar sin registrar notas ficticias
+
+Después de instalar el SQL, debe resultar `true` esta consulta de solo lectura:
+
+```sql
+SELECT pg_catalog.has_function_privilege(
+  'anon',
+  'public.registrar_batalla_final(integer,numeric)',
+  'EXECUTE'
+);
+```
+
+Tras una partida **real**, verifica en el Table Editor que `public.scores` haya actualizado la fila del equipo escogido y que `total` refleje la suma. El resultado antiguo (si no quedó registrado) no puede deducirse de la captura; para recuperarlo necesitas conocer su equipo y su nota legítima.

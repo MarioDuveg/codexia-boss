@@ -67,17 +67,9 @@
         .damage-flash {
             transition: opacity 0.15s ease-out;
         }
-        /* El control XR oficial se conserva como activador interno.
-           Solo la flecha de la pantalla inicial debe ser visible. */
+        /* El control XR oficial permanece como activador interno.
+           En la portada el usuario pulsa ENTER para comenzar. */
         #VRButton { display: none !important; }
-        @keyframes start-arrow-bob {
-            0%,100% { transform: translateY(-4px); }
-            50% { transform: translateY(6px); }
-        }
-        .start-arrow-motion { display: inline-block; animation: start-arrow-bob 1.55s ease-in-out infinite; }
-        @media (prefers-reduced-motion: reduce) {
-            .start-arrow-motion { animation: none; }
-        }
         body.game-active #menu-modal {
             display: none !important;
         }
@@ -134,7 +126,7 @@
          style="background: radial-gradient(circle, rgba(0, 243, 255, 0.35) 0%, rgba(255, 85, 0, 0.25) 60%, transparent 100%); mix-blend-mode: screen;"></div>
 
     <!-- HUD del jugador: cronómetro y única barra de salud. -->
-    <div id="hud" class="fixed inset-0 pointer-events-none z-20 flex flex-col items-center justify-start pt-6 sm:pt-8 px-4">
+    <div id="hud" class="fixed inset-0 pointer-events-none z-20 flex flex-col items-center justify-start pt-3 sm:pt-4 px-4">
         <div id="hud-bars-container" class="w-full max-w-xs flex flex-col items-center gap-1">
             <div id="battle-timer-dom" aria-live="off" style="display:none;color:#dcf9ff;text-shadow:0 0 9px #008cbb;letter-spacing:.18em"
                  class="font-orbitron font-bold text-lg">04:00</div>
@@ -144,7 +136,7 @@
         </div>
     </div>
 
-    <!-- Pantalla inicial mínima: título, equipo y flecha de entrada. -->
+    <!-- Pantalla inicial mínima: título, equipo y botón ENTER. -->
     <div id="menu-modal" class="fixed inset-0 z-30 flex items-center justify-center bg-black/95 p-4">
         <div class="w-full max-w-md rounded-2xl border border-orange-500/45 bg-gradient-to-b from-slate-950 to-black px-6 py-10 text-center shadow-[0_0_65px_rgba(255,69,0,0.18)]">
             <h1 class="font-orbitron text-3xl sm:text-4xl font-black uppercase tracking-widest text-white hud-glow-orange mb-10">
@@ -161,10 +153,10 @@
                             class="team-step" style="font-size:30px;min-width:58px;min-height:56px;border-radius:12px;border:1px solid #41c9d5;background:#10232e;color:white">+</button>
                 </div>
             </section>
-            <button id="start-btn" type="button" aria-label="Entrar a Batalla final en realidad virtual" title="Iniciar Batalla final"
-                    class="mx-auto flex items-center justify-center w-20 h-20 rounded-full border-2 border-orange-400/80 bg-gradient-to-b from-orange-700 to-red-800 text-white shadow-[0_0_32px_rgba(255,85,0,0.42)] hover:from-orange-600 hover:to-red-600 active:scale-95 transition"
-                    style="font-size:58px;line-height:1;">
-                <span class="start-arrow-motion" aria-hidden="true">↓</span>
+            <button id="start-btn" type="button" aria-label="Entrar a Batalla final" title="Entrar a Batalla final"
+                    class="mx-auto flex items-center justify-center w-32 h-16 rounded-xl border-2 border-orange-400/80 bg-gradient-to-b from-orange-700 to-red-800 text-white shadow-[0_0_32px_rgba(255,85,0,0.42)] hover:from-orange-600 hover:to-red-600 active:scale-95 transition font-orbitron font-black tracking-widest"
+                    style="font-size:22px;line-height:1;">
+                <span>ENTER</span>
             </button>
         </div>
     </div>
@@ -583,7 +575,7 @@ class SoundSystem {
             })
         );
         vrHudMesh.renderOrder = 999;
-        vrHudMesh.position.set(0, -0.12, -1.35);
+        vrHudMesh.position.set(0, -0.06, -1.35); // 6 cm más arriba dentro del visor VR
         vrHudMesh.rotation.x = -0.03;
         camera.add(vrHudMesh);
 
@@ -1001,7 +993,12 @@ class SoundSystem {
         const BATTLE_DURATION_SECONDS = 240;
         const SUPABASE_URL = 'https://zgpfcmvjmjfaphtudmis.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_0uQxgvjB7S7eCSqssUlPnA_Brhj-zx7';
-        const CODEXIA_BATALLA_FINAL = 5; // Talleres 1..4; batalla final = 5.
+        // Endpoint exclusivo de Batalla Final. No depende de que registrar_taller
+        // (función de talleres 1..4) acepte el identificador 5.
+        // Debe instalarse SQL/01_REGISTRAR_BATALLA_FINAL.sql en Supabase una vez.
+        const CODEXIA_BATALLA_RPC = 'registrar_batalla_final';
+        const CODEXIA_PENDING_KEY = 'codexia_batalla_final_pendientes_v1';
+        const codexiaUploadsEnCurso = new Set();
         let selectedTeam = 1;
         const teamNumber = document.getElementById('team-number');
         function changeTeam(by) {
@@ -1051,35 +1048,108 @@ class SoundSystem {
                 seconds: Math.round(seconds)
             };
         }
-        async function enviarScore(equipo, taller, score) {
-            if (!Number.isInteger(equipo) || equipo < 1 || equipo > 20) throw new Error('Equipo fuera del rango 1..20');
-            if (taller !== CODEXIA_BATALLA_FINAL) throw new Error('Taller no válido para esta batalla');
-            if (!Number.isInteger(score) || score < 0 || score > 100) throw new Error('Puntuación fuera de rango');
-            const respuesta = await fetch(`${SUPABASE_URL}/rest/v1/rpc/registrar_taller`, {
+        // Los puntajes pendientes quedan en este navegador en caso de caída de Wi-Fi
+        // o de cerrar el visor antes de que Supabase confirme el registro.
+        function leerPendientesCODEXIA() {
+            try {
+                const data = JSON.parse(localStorage.getItem(CODEXIA_PENDING_KEY) || '[]');
+                return Array.isArray(data) ? data.filter(x => Number.isInteger(x.equipo) &&
+                    x.equipo >= 1 && x.equipo <= 20 && Number.isInteger(x.puntaje) &&
+                    x.puntaje >= 0 && x.puntaje <= 100) : [];
+            } catch (err) { return []; }
+        }
+        function guardarPendienteCODEXIA(equipo, puntaje) {
+            try {
+                const pendientes = leerPendientesCODEXIA();
+                const previo = pendientes.find(x => x.equipo === equipo);
+                if (previo) previo.puntaje = Math.max(previo.puntaje, puntaje);
+                else pendientes.push({equipo, puntaje});
+                localStorage.setItem(CODEXIA_PENDING_KEY, JSON.stringify(pendientes));
+            } catch (err) { console.warn('CODEXIA: almacenamiento local no disponible'); }
+        }
+        function quitarPendienteCODEXIA(equipo, puntajeConfirmado) {
+            try {
+                const restantes = leerPendientesCODEXIA().filter(x =>
+                    x.equipo !== equipo || x.puntaje > puntajeConfirmado);
+                localStorage.setItem(CODEXIA_PENDING_KEY, JSON.stringify(restantes));
+            } catch (err) {}
+        }
+        async function enviarBatallaFinal(equipo, score) {
+            if (!Number.isInteger(equipo) || equipo < 1 || equipo > 20) throw new Error('Equipo fuera de 1..20');
+            if (!Number.isInteger(score) || score < 0 || score > 100) throw new Error('Puntuación fuera de 0..100');
+            const respuesta = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${CODEXIA_BATALLA_RPC}`, {
                 method: 'POST',
-                headers: {'apikey': SUPABASE_KEY, 'Content-Type': 'application/json'},
-                body: JSON.stringify({p_equipo: equipo, p_taller: taller, p_puntaje: score})
+                headers: { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({p_equipo: equipo, p_puntaje: score}),
+                cache: 'no-store', keepalive: true
             });
-            if (!respuesta.ok) throw new Error(await respuesta.text());
             const raw = await respuesta.text();
-            return raw ? JSON.parse(raw) : null;
+            if (!respuesta.ok) {
+                let detalle = raw;
+                try { const obj = JSON.parse(raw); detalle = obj.message || obj.details || raw; } catch (err) {}
+                if (respuesta.status === 404) detalle = 'Falta instalar SQL/01_REGISTRAR_BATALLA_FINAL.sql en Supabase';
+                throw new Error(`Supabase HTTP ${respuesta.status}: ${String(detalle).slice(0, 155)}`);
+            }
+            // El RPC responde el valor REAL almacenado en batalla_final.
+            // Un 200 sin valor de confirmación ya NO se interpreta como guardado.
+            let valorAlmacenado = NaN;
+            try {
+                const confirmado = JSON.parse(raw);
+                // Rechaza null / true / {} y respuestas vacías incluso si score=0.
+                if (typeof confirmado === 'number' ||
+                    (typeof confirmado === 'string' && /^\d+(?:\.\d+)?$/.test(confirmado.trim()))) {
+                    valorAlmacenado = Number(confirmado);
+                }
+            } catch (err) {}
+            if (!Number.isFinite(valorAlmacenado) || valorAlmacenado < score || valorAlmacenado > 100) {
+                throw new Error('Supabase no confirmó el valor de batalla_final; revisa la función SQL');
+            }
+            return valorAlmacenado;
         }
         async function submitBattleGrade(result) {
             const battle = gameState.battle;
             if (!result || result !== battle.result || battle.uploadStatus === 'sending' || battle.uploadStatus === 'saved') return;
+            guardarPendienteCODEXIA(result.team, result.grade.score);
             battle.uploadStatus = 'sending';
             battle.uploadError = '';
             redrawGameOverPanel();
             try {
-                await enviarScore(result.team, CODEXIA_BATALLA_FINAL, result.grade.score);
+                const confirmado = await enviarBatallaFinal(result.team, result.grade.score);
                 battle.uploadStatus = 'saved';
+                battle.savedScore = confirmado;
+                quitarPendienteCODEXIA(result.team, confirmado);
             } catch (err) {
                 battle.uploadStatus = 'error';
                 battle.uploadError = String(err?.message || err).slice(0, 220);
-                console.warn('CODEXIA: no se pudo publicar la puntuación:', battle.uploadError);
+                console.warn('CODEXIA: puntuación PENDIENTE:', battle.uploadError);
             }
             if (gameState.battle.result === result) redrawGameOverPanel();
         }
+        async function reenviarPendientesCODEXIA() {
+            for (const {equipo, puntaje} of leerPendientesCODEXIA()) {
+                if (codexiaUploadsEnCurso.has(equipo)) continue;
+                // Si este equipo se está registrando en el resultado actual,
+                // dejamos que su petición termine para evitar carreras innecesarias.
+                if (gameState.battle.uploadStatus === 'sending' && gameState.battle.result?.team === equipo) continue;
+                codexiaUploadsEnCurso.add(equipo);
+                try {
+                    const confirmado = await enviarBatallaFinal(equipo, puntaje);
+                    quitarPendienteCODEXIA(equipo, confirmado);
+                    const battle = gameState.battle;
+                    if (battle.result?.team === equipo && battle.result?.grade?.score === puntaje) {
+                        battle.savedScore = confirmado;
+                        battle.uploadStatus = 'saved';
+                        battle.uploadError = '';
+                        redrawGameOverPanel();
+                    }
+                } catch (err) {
+                    console.warn('CODEXIA: envío anterior todavía pendiente:', String(err?.message || err));
+                } finally { codexiaUploadsEnCurso.delete(equipo); }
+            }
+        }
+        window.addEventListener('online', () => { reenviarPendientesCODEXIA(); });
+        // Reintentar resultados guardados de una sesión anterior tras cargar el juego.
+        reenviarPendientesCODEXIA();
         function finishBattle(won, reason = '') {
             const battle = gameState.battle;
             if (battle.result) return battle.result;
@@ -4435,8 +4505,8 @@ class SoundSystem {
         // ============================================================================
         function drawGameOverPanel(ctx, result, battle) {
             const saved = battle.uploadStatus === 'saved';
-            const status = saved ? 'GUARDADO EN CODEXIA' : battle.uploadStatus === 'error' ?
-                'ERROR: APUNTA AQUÍ PARA REINTENTAR (O R)' : 'ENVIANDO A CODEXIA...';
+            const status = saved ? `GUARDADO EN CODEXIA: ${battle.savedScore} / 100` : battle.uploadStatus === 'error' ?
+                'NO GUARDADO - DISPARA AQUÍ PARA REINTENTAR (O R)' : 'ENVIANDO A CODEXIA...';
             ctx.clearRect(0, 0, 1024, 640);
             ctx.fillStyle = 'rgba(3, 9, 18, 0.95)'; ctx.fillRect(0, 0, 1024, 640);
             ctx.strokeStyle = result.won ? '#28dc90' : '#f87171';
@@ -4458,6 +4528,12 @@ class SoundSystem {
             ctx.fillStyle = saved ? '#7df4bb' : battle.uploadStatus === 'error' ? '#ff9e9e' : '#9bd7ff';
             ctx.font = 'bold 29px Courier New';
             ctx.fillText(status, 512, 490);
+            // Diagnóstico corto en el propio visor: no ocultar que el servidor rechazó la nota.
+            if (battle.uploadStatus === 'error') {
+                ctx.font = '18px Courier New';
+                ctx.fillStyle = '#ffc9c9';
+                ctx.fillText(battle.uploadError.slice(0, 74), 512, 521);
+            }
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 27px Courier New';
             ctx.fillText('[ DISPARA AQUÍ PARA REINICIAR ]', 512, 565);
