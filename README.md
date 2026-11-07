@@ -1,56 +1,45 @@
-# ULTRON: COLOSSAL AWAKENING VR — Visual Optimized Edition
+# ULTRON: COLOSSAL AWAKENING VR — Tormenta y descarga (Quest 3 / Quest Pro)
 
-Versión mejorada para **Meta Quest 3** y **Meta Quest Pro** usando HTML + Three.js r160 + WebGL/WebXR. Mantiene intactas las mecánicas, cuatro armas/turbinas ARC, controles, jetpack, cinemáticas de Ultron y sonidos existentes. **No se han añadido dependencias de compilación.**
+Proyecto **HTML + Three.js r160 + WebXR**, listo para publicar como **sitio estático en GitHub y Render**. Conserva jetpack, controles VR/PC, cuatro armas y turbinas ARC, cinemáticas, impactos y música original.
 
-## Archivos para Render y GitHub
+## Cambios de esta edición
+
+- **Ultron 50 % más grande:** escala 75.0 en vez de 50.0, altura teórica de **562,5 m** en vez de ~375 m. Adaptados el encendido vertical, luces, sombras de contacto, pisadas y techo de vuelo (650 m).
+- **Suelo negro:** aspecto casi negro (`#020203`) con microrrelieve discreto, sin reflejos intensos que aclaren el terreno.
+- **Gotas convertidas en círculos expansivos:** 260 anillos de lluvia en Quest 3, 150 en Quest Pro; nacen y se expanden sobre el suelo **mediante un único lote de geometría instanciada y shader GPU**. Comienzan desde el inicio de la partida y siguen al jugador.
+- **Descarga de proximidad:** si se entra en el campo eléctrico del robot mientras está activo, se reciben **20 puntos de daño** y un **empuje horizontal** (con ligero impulso vertical). Intervalo mínimo de 2,3 segundos entre descargas; aparecen chispas y alerta de HUD. No se aplica después de derrotar al robot.
+- **Relámpagos previos a la activación:** la tormenta y sus rayos nube-tierra aparecen antes de recoger el jetpack y siguen durante el combate. Se mantienen rayos fractales agrupados en instancias.
+- **Niebla azul y armadura oscurecidas:** menor intensidad azul en atmósfera, luces de contorno y nubes; armaduras metálicas más oscuras sin alterar los colores identificativos de las turbinas ARC.
+- **Sonidos aportados, sin números:** `public/StartingUp.mp3` (se reproduce al tomar el jetpack e iniciar el encendido) y `public/RobotStep.mp3` (se reproduce en **cada pisada registrada** por la animación). `StartingUp(2).m4a` se convirtió a MP3 para reproducción sencilla por WebXR; `RobotStep(1).mp3` se copió con el nuevo nombre. Ambos **están incluidos localmente**, sin depender de URL externa.
+- Mantiene las optimizaciones anteriores de PBR, `InstancedMesh` para nubes y rayos, piscina de humo, perfiles de Quest y correcciones del shader.
+
+## Estructura del repositorio
 
 ```text
 ultron_colossal_visual_optimized/
 ├── public/
-│   └── index.html
+│   ├── index.html
+│   ├── StartingUp.mp3
+│   └── RobotStep.mp3
 ├── render.yaml
 ├── README.md
 └── .gitignore
 ```
 
-1. Crea un repositorio de GitHub o utiliza el que ya tienes.
-2. Sube **la carpeta `public/` y los archivos de la raíz**, no el ZIP como archivo único.
-3. En Render, configura **New → Static Site**, con **Build Command** `echo "Sitio HTML estatico: no requiere compilacion"` y **Publish Directory** `public`. Alternativamente utiliza `render.yaml` como Blueprint.
-4. Abre la URL HTTPS del sitio en Meta Quest Browser y pulsa «Iniciar experiencia / Enter VR».
+**Es importante subir los DOS MP3 dentro de `public/` junto con `index.html`**. Si solo se sustituye el HTML, los sonidos nuevos no funcionarán.
 
-## Mejoras visuales realizadas
+## Subir a GitHub y Render
 
-- **Armadura PBR**: rugosidad y normal maps procedurales compartidos para metal cepillado y microarañazos (sin geometría adicional).
-- **Suelo mojado**: textura procedural de charcos y microrrelieve, más sombras suaves de contacto bajo las botas (sin costosas shadow maps).
-- **Nubes**: cambiadas de 48 mallas/materiales a **3 lotes de instancias**, que reducen draw calls.
-- **Rayos de la mano**: 120 segmentos convertidos en **2 `InstancedMesh`**, manteniendo su animación fractal.
-- **Relámpagos de tormenta**: sus segmentos se agrupan en un `InstancedMesh` por relámpago activo.
-- **Humo**: columna y explosiones usan un pool reutilizable de **192 instancias**, con opacidad individual en shader, evitando crear y destruir materiales en cada emisión.
-- **Salpicaduras en suelo**: ondas pequeñas cerca del jugador mediante **un shader de puntos** y un solo lote de dibujo.
-- **Shader de encendido**: normalizadas las operaciones `smoothstep` con límites previamente invertidos para evitar resultados GLSL indefinidos.
-- **Limpieza de VFX**: eliminación segura de recursos temporales de relámpagos, explosiones y marcador al reiniciar.
-- **Configuración WebXR**: factor de framebuffer, foveación (cuando sea compatible) y presupuestos gráficos diferentes para Quest 3 / Quest Pro.
+1. Descomprime el ZIP y sube a la raíz del repositorio **el contenido de la carpeta descomprimida** (no el ZIP ni una carpeta extra alrededor del proyecto).
+2. En Render selecciona **New → Static Site** con **Build Command:** `echo "Sitio HTML estatico: no requiere compilacion"` y **Publish Directory:** `public`; también puedes utilizar el `render.yaml` incluido.
+3. Desde el navegador de Quest abre la dirección HTTPS que ofrece Render e inicia la experiencia.
+4. Selecciona en el menú **Quest 3 — detalle alto** o **Quest Pro — equilibrado**. El modo automático es orientativo; puedes elegir manualmente.
 
-## Perfiles gráficos
+Los cuatro audios originales del repositorio externo siguen dependiendo de sus URLs preexistentes. **Los dos audios nuevos viajan dentro del proyecto**.
 
-En el menú principal aparece una selección de calidad:
+## Comprobaciones y límites
 
-| Modo | Buffer XR relativo | Foveación inicial | Densidad relativa nubes/lluvia |
-| --- | ---: | ---: | ---: |
-| Quest 3 — alto | 0.98 | 0.40 | 100 % |
-| Quest Pro — equilibrado | 0.85 | 0.65 | 72 % / 74 % |
-
-El modo «Automático» usa el identificador del navegador **solo como pista**, no como comprobación de características WebXR. Si lo detecta mal, elige el modo manualmente antes de iniciar VR. También puedes forzar el perfil desde la dirección: `?graphics=quest3` o `?graphics=questpro`.
-
-Para una vista de diagnóstico en la pantalla del PC, usa `?debug=1` (añade FPS, draw calls, triángulos y puntos, basado en `renderer.info`). Este indicador no sustituye mediciones de GPU dentro del visor.
-
-## Compatibilidad y limitaciones
-
-- El código mantiene su Three.js **0.160.0** y bibliotecas de CDN tal como en el proyecto original. Necesita Internet para descargar librerías y audios MP3 alojados externamente.
-- La foveación y otros ajustes XR dependen del soporte de la versión de Meta Quest Browser. Los niveles configurados son puntos de partida, no valores de rendimiento certificados.
-- Se verificó la **sintaxis JavaScript con Node.js** y la estructura de los archivos. **No se pudo ejecutar ni medir físicamente en Meta Quest 3 / Quest Pro en este entorno**, por lo que se recomienda probar ambos perfiles en los visores.
-- Si ocurre un bajón de FPS, empezar por Quest Pro (equilibrado) y medir draw calls / GPU antes de añadir más efectos.
-
-## Actualizar el juego
-
-Para reemplazar la versión anterior, conserva la ruta exacta `public/index.html`, realiza commit/push y deja que Render vuelva a desplegar el sitio estático. En pruebas locales utiliza un servidor HTTP; para WebXR real es necesario HTTPS o un contexto seguro admitido.
+- Sintaxis JavaScript de módulo validada con Node.js; archivos del proyecto y decodificación de los audios comprobados.
+- Los efectos de círculos, nubes y relámpagos se han programado para ejecutarse principalmente en GPU. En visores VR **los FPS y la compatibilidad visual deben comprobarse físicamente**, especialmente el renderizado WebXR y los materiales.
+- Para investigar la tasa de FPS o las llamadas de dibujo, añade `?debug=1` a la URL (vista de diagnóstico en pantalla cuando el navegador la exponga).
+- Se recomienda HTTPS para WebXR y conexión a Internet para Three.js y otros recursos CDN que ya existían.

@@ -131,14 +131,14 @@
             <div class="w-full h-1 bg-gradient-to-r from-transparent via-orange-500 to-transparent mb-4"></div>
 
             <div class="inline-block px-3 py-1 rounded-full bg-orange-950/90 border border-orange-500/50 text-orange-300 text-xs tracking-widest uppercase mb-2">
-                OSCURIDAD TOTAL // JETPACK LIBRE // COLOSO TITÁNICO ESCALA 50.0 (375M)
+                TORMENTA ELÉCTRICA // JETPACK LIBRE // COLOSO TITÁNICO ESCALA 75.0 (562.5M)
             </div>
 
             <h1 class="font-orbitron text-2xl sm:text-4xl font-black text-white tracking-wider hud-glow-orange mb-2">
                 ULTRON: COLOSSAL AWAKENING VR
             </h1>
             <p class="text-slate-300 text-xs sm:text-sm mb-4 max-w-xl mx-auto leading-relaxed">
-                En medio de la oscuridad absoluta bajo la lluvia, toma el <strong>Jetpack brillante en el centro</strong>. Verás cómo poco a poco se enciende desde los pies hasta la cabeza el colosal <strong>Ultron Prestige MK-X (Escala 50.0 / 375m)</strong> con sobrecarga de energía, y al encenderse por completo comenzará a caminar hacia ti. Destruye sus <strong>4 Turbinas de colores</strong> para hacerlas estallar en fuego y humo.
+                Bajo rayos que caen de las nubes y lluvia sobre un suelo negro, toma el <strong>Jetpack brillante en el centro</strong>. Verás cómo poco a poco se enciende desde los pies hasta la cabeza el colosal <strong>Ultron Prestige MK-X (Escala 75.0 / 562.5m)</strong> con sobrecarga de energía, y al encenderse por completo comenzará a caminar hacia ti. Destruye sus <strong>4 Turbinas de colores</strong> para hacerlas estallar en fuego y humo. <strong>¡No te acerques demasiado a Ultron! Su campo eléctrico causa daño y te repele.</strong>
             </p>
 
             <!-- Leyenda de las 4 Turbinas Vulnerables -->
@@ -223,6 +223,8 @@
         const SOUNDTRACK_AUDIO_URL = 'https://raw.githubusercontent.com/MarioDuran/VariableOverload/main/Siege_of_the_Colossus.mp3';
         const BOSS_CHARGE_AUDIO_URL = 'https://raw.githubusercontent.com/MarioDuran/VariableOverload/main/power-beam-sound-effect.mp3';
         const BOSS_SHOOT_AUDIO_URL = 'https://raw.githubusercontent.com/MarioDuran/VariableOverload/main/ice-beam-fire-sound-effect.mp3';
+        const STARTING_UP_AUDIO_URL = './StartingUp.mp3'; // StartingUp(2).m4a convertido a MP3
+        const ROBOT_STEP_AUDIO_URL = './RobotStep.mp3'; // RobotStep(1).mp3 sin número
 
         const soundCache = new Map();
         function playSoundResource(url, volume = 1.0) {
@@ -237,6 +239,14 @@
             audio.crossOrigin = 'anonymous';
             audio.volume = volume;
             audio.play().catch(() => {});
+        }
+
+        // Los dos audios vienen dentro de public/: descarga/pre-carga sin depender de GitHub Raw.
+        for (const url of [STARTING_UP_AUDIO_URL, ROBOT_STEP_AUDIO_URL]) {
+            const clip = new Audio(url);
+            clip.preload = 'auto';
+            clip.load();
+            soundCache.set(url, clip);
         }
 
         function triggerControllerHaptics(handedness = 'both', intensity = 0.5, durationMs = 40) {
@@ -396,6 +406,10 @@
                 osc.stop(now + 0.13);
             }
 
+            playMechaStartingUp() {
+                playSoundResource(STARTING_UP_AUDIO_URL, 1.0);
+            }
+
             playJetpackEquip() {
                 this.init();
                 if (!this.ctx) return;
@@ -437,6 +451,7 @@
             }
 
             playColossalFootstep() {
+                playSoundResource(ROBOT_STEP_AUDIO_URL, 0.96); // Cada pisada real de Ultron
                 this.init();
                 if (!this.ctx) return;
                 const now = this.ctx.currentTime;
@@ -639,9 +654,9 @@
         const sound = new SoundSystem();
 
         // ============================================================================
-        // 3. ESCENA THREE.JS, WEBXR, CÁMARA (FAR=6500) Y ESCALA TITÁNICA 50.0x
+        // 3. ESCENA THREE.JS, WEBXR, CÁMARA Y ESCALA TITÁNICA 75.0x
         // ============================================================================
-        const COLOSSAL_SCALE = 50.0; // Escala 50.0 (~375 metros de altura)
+        const COLOSSAL_SCALE = 75.0; // +50% sobre 50.0: ~562.5 metros de altura
         const LOCAL_GROUND_OFFSET_Y = 3.49; // Compensa GROUND_SURFACE_Y (-3.49) para apoyar las botas en Y = 0.0
 
         const canvas = document.getElementById('game-canvas');
@@ -681,9 +696,9 @@
         const _desktopDummyGun = new THREE.Object3D();
 
         const scene = new THREE.Scene();
-        // Oscuridad absoluta inicial para que nada se vea reflejado antes de tomar el Jetpack
+        // El mecha sigue oculto antes del Jetpack; ya se ve la tormenta y el suelo negro.
         scene.background = new THREE.Color(0x000000);
-        scene.fog = new THREE.FogExp2(0x000000, 0.00065);
+        scene.fog = new THREE.FogExp2(0x010209, 0.00068); // Azul casi negro, un poco más oscuro
 
         const pmremGenerator = new THREE.PMREMGenerator(renderer);
         scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.03).texture;
@@ -860,6 +875,8 @@
                 hp: 100,
                 maxHp: 100,
                 vel: new THREE.Vector3(),
+                shockImpulse: new THREE.Vector3(),
+                lastShockTime: -9999,
                 yaw: 0,
                 pitch: 0.14,
                 isJetpackThrusting: false
@@ -896,8 +913,8 @@
         // ============================================================================
         // 5. SISTEMA DE MATERIALES PBR, SHADER DE ENCENDIDO VERTICAL Y ATMÓSFERA
         // ============================================================================
-        const BOOT_START_Y = -75.0;
-        const BOOT_END_Y = 475.0; // Cubre toda la altura de Ultron a escala 50.0 (~375m) con margen para el degradado amplio
+        const BOOT_START_Y = -110.0;
+        const BOOT_END_Y = 700.0; // Ilumina la nueva altura de ~562.5 m y deja margen de transición
         const BOOT_DURATION = 15.0;
         const bootSweepUniform = { value: BOOT_START_Y };
 
@@ -955,7 +972,7 @@
 
         const materials = {
             armorPrimary: new THREE.MeshStandardMaterial({
-                color: 0x1c2129,
+                color: 0x151a20,
                 metalness: 0.91,
                 roughness: 0.33,
                 roughnessMap: armorDetail.rough,
@@ -964,7 +981,7 @@
                 envMapIntensity: 1.05
             }),
             armorHighlight: new THREE.MeshStandardMaterial({
-                color: 0x313946,
+                color: 0x272e39,
                 metalness: 0.94,
                 roughness: 0.27,
                 roughnessMap: armorDetail.rough,
@@ -973,7 +990,7 @@
                 envMapIntensity: 1.20
             }),
             crescentSilver: new THREE.MeshStandardMaterial({
-                color: 0x566476,
+                color: 0x465364,
                 metalness: 0.96,
                 roughness: 0.26,
                 roughnessMap: armorDetail.rough,
@@ -982,13 +999,13 @@
                 envMapIntensity: 1.35
             }),
             underSuit: new THREE.MeshStandardMaterial({
-                color: 0x0a0c10,
+                color: 0x08090d,
                 metalness: 0.78,
                 roughness: 0.52,
                 envMapIntensity: 0.55
             }),
             darkJoint: new THREE.MeshStandardMaterial({
-                color: 0x050608,
+                color: 0x040506,
                 metalness: 0.65,
                 roughness: 0.68,
                 envMapIntensity: 0.30
@@ -1058,18 +1075,18 @@
                         float waveActive = smoothstep(-60.0, -15.0, uBootSweepY);
                         float organicWave = (sin(vWorldPosBoot.x * 0.07) * 14.0 + cos(vWorldPosBoot.z * 0.07) * 14.0) * waveActive;
                         float effectiveY = vWorldY + organicWave;
-                        float bootMask = (1.0 - smoothstep(uBootSweepY - 65.0, uBootSweepY + 55.0, effectiveY));
-                        float scanFront = exp(-pow((effectiveY - uBootSweepY) * 0.022, 2.0)) * 0.45 * waveActive * step(uBootSweepY, 445.0);
+                        float bootMask = (1.0 - smoothstep(uBootSweepY - 97.5, uBootSweepY + 82.5, effectiveY));
+                        float scanFront = exp(-pow((effectiveY - uBootSweepY) * 0.022, 2.0)) * 0.45 * waveActive * step(uBootSweepY, 670.0);
                         totalEmissiveRadiance *= clamp(bootMask + scanFront, 0.0, 2.2);`
                     ).replace(
                         '#include <opaque_fragment>',
                         `
                         float waveActiveOut = smoothstep(-60.0, -15.0, uBootSweepY);
                         float organicWaveOut = (sin(vWorldPosBoot.x * 0.07) * 14.0 + cos(vWorldPosBoot.z * 0.07) * 14.0) * waveActiveOut;
-                        float whiteLightMask = (1.0 - smoothstep(uBootSweepY - 70.0, uBootSweepY + 55.0, vWorldY + organicWaveOut));
-                        float distHaze = clamp((vCamDist - 95.0) / 520.0, 0.0, 0.58);
-                        float heightHaze = clamp(vWorldY / 420.0, 0.0, 0.42);
-                        vec3 stormHazeColor = vec3(0.015, 0.028, 0.052) * whiteLightMask;
+                        float whiteLightMask = (1.0 - smoothstep(uBootSweepY - 105.0, uBootSweepY + 82.5, vWorldY + organicWaveOut));
+                        float distHaze = clamp((vCamDist - 110.0) / 780.0, 0.0, 0.58);
+                        float heightHaze = clamp(vWorldY / 630.0, 0.0, 0.42);
+                        vec3 stormHazeColor = vec3(0.011, 0.020, 0.037) * whiteLightMask;
                         outgoingLight = mix(outgoingLight, stormHazeColor, clamp(distHaze + heightHaze * 0.45, 0.0, 0.65));
                         outgoingLight *= whiteLightMask;
                         #include <opaque_fragment>
@@ -1085,7 +1102,7 @@
                         `#include <color_fragment>
                         float waveActiveBasic = smoothstep(-60.0, -15.0, uBootSweepY);
                         float organicWaveBasic = (sin(vWorldPosBoot.x * 0.07) * 12.0 + cos(vWorldPosBoot.z * 0.07) * 12.0) * waveActiveBasic;
-                        float bootMask = (1.0 - smoothstep(uBootSweepY - 58.0, uBootSweepY + 48.0, vWorldY + organicWaveBasic));
+                        float bootMask = (1.0 - smoothstep(uBootSweepY - 87.0, uBootSweepY + 72.0, vWorldY + organicWaveBasic));
                         diffuseColor.rgb *= bootMask;
                         diffuseColor.a *= bootMask;`
                     );
@@ -2281,32 +2298,32 @@
         handFractalArcs.forEach(arc => rebuildHandFractalArc(arc));
 
         // ============================================================================
-        // 8. ILUMINACIÓN (0.0 AL INICIO), NUBES, 20,000 GOTAS EN GPU Y RELÁMPAGOS FRACTALES
+        // 8. ILUMINACIÓN, NUBES, 20,000 GOTAS EN GPU Y RELÁMPAGOS DESDE EL INICIO
         // ============================================================================
         const keyLight = new THREE.DirectionalLight(0xd8ecff, 0.0);
-        keyLight.position.set(120, 420, 220);
+        keyLight.position.set(180, 630, 330);
         keyLight.visible = false;
         scene.add(keyLight);
 
-        const rimLightBlue = new THREE.DirectionalLight(0x4ea8ff, 0.0);
-        rimLightBlue.position.set(-180, 380, -320);
+        const rimLightBlue = new THREE.DirectionalLight(0x407fc2, 0.0);
+        rimLightBlue.position.set(-270, 570, -480);
         rimLightBlue.visible = false;
         scene.add(rimLightBlue);
 
-        const chestReactorLight = new THREE.PointLight(0xff3300, 0.0, 290, 1.35);
+        const chestReactorLight = new THREE.PointLight(0xff3300, 0.0, 435, 1.35);
         chestReactorLight.visible = false;
         scene.add(chestReactorLight);
 
-        const handPlasmaLight = new THREE.PointLight(0xff6600, 0.0, 220, 1.4);
+        const handPlasmaLight = new THREE.PointLight(0xff6600, 0.0, 330, 1.4);
         handPlasmaLight.visible = false;
         scene.add(handPlasmaLight);
 
-        const bootScannerLight = new THREE.PointLight(0xff5500, 0.0, 220, 1.4);
+        const bootScannerLight = new THREE.PointLight(0xff5500, 0.0, 330, 1.4);
         bootScannerLight.visible = false;
         scene.add(bootScannerLight);
 
-        const stormFlashLight = new THREE.DirectionalLight(0x99ccff, 0.0);
-        stormFlashLight.position.set(-80, 480, 140);
+        const stormFlashLight = new THREE.DirectionalLight(0x87acd4, 0.0);
+        stormFlashLight.position.set(-80, 680, 140);
         stormFlashLight.visible = false;
         scene.add(stormFlashLight);
 
@@ -2359,9 +2376,9 @@
         const wetFloor = new THREE.Mesh(
             new THREE.PlaneGeometry(6000, 6000),
             new THREE.MeshStandardMaterial({
-                color: 0x0b131b,
-                metalness: 0.52,
-                roughness: 0.54,
+                color: 0x020203, // Negro: los círculos de la lluvia aportan el detalle visible
+                metalness: 0.10,
+                roughness: 0.69,
                 roughnessMap: wetFloorMaps.rough,
                 normalMap: wetFloorMaps.normal,
                 normalScale: new THREE.Vector2(0.32,0.32),
@@ -2373,7 +2390,7 @@
         scene.add(wetFloor);
 
         // Sombras elípticas de contacto: dos planos suaves en vez de shadow maps.
-        // Evita una pasada adicional de renderizado para el coloso de 375 m.
+        // Evita una pasada adicional de renderizado para el coloso de 562.5 m.
         function makeContactShadowTexture() {
             const canvas=document.createElement('canvas');
             canvas.width=canvas.height=128;
@@ -2390,7 +2407,7 @@
             map:contactShadowTexture,transparent:true,depthWrite:false,
             opacity:0.62,polygonOffset:true,polygonOffsetFactor:-1
         });
-        const contactShadowGeometry=new THREE.PlaneGeometry(66,76);
+        const contactShadowGeometry=new THREE.PlaneGeometry(99,114);
         contactShadowGeometry.rotateX(-Math.PI/2);
         const contactShadows=[-1,1].map(side=>{
             const mesh=new THREE.Mesh(contactShadowGeometry,contactShadowMaterial);
@@ -2405,7 +2422,7 @@
             for (const c of contactShadows) {
                 c.mesh.visible=active;
                 if (!active) continue;
-                const lateral=c.side*38;
+                const lateral=c.side*(38 * COLOSSAL_SCALE / 50.0);
                 const yaw=b.facingYaw;
                 c.mesh.position.set(b.pos.x+Math.cos(yaw)*lateral,0.065,
                     b.pos.z-Math.sin(yaw)*lateral);
@@ -2419,13 +2436,13 @@
         const colossalCloudLayers = [];
         const cloudTransform = new THREE.Object3D();
         [
-            { y: 34, count: 14, size: 165, opacity: 0.07 },
-            { y: 128, count: 16, size: 260, opacity: 0.09 },
-            { y: 265, count: 18, size: 340, opacity: 0.11 }
+            { y: 75, count: 14, size: 190, opacity: 0.065 },
+            { y: 260, count: 16, size: 325, opacity: 0.075 },
+            { y: 490, count: 18, size: 410, opacity: 0.09 }
         ].forEach((layerCfg, lIdx) => {
             const mat = new THREE.MeshBasicMaterial({
                 map: smokePuffTex,
-                color: 0x3b5878,
+                color: 0x293d54,
                 transparent: true,
                 opacity: 0,
                 blending: THREE.AdditiveBlending,
@@ -2554,47 +2571,65 @@
         rainSystemGroup.add(createGPURainLayer(13500, 380.0, 240.0, 2.2, 4.6, 68.0, 102.0, -0.22, 0.08, 0x99bbee, 0.36));
         rainSystemGroup.add(createGPURainLayer(6500, 75.0, 55.0, 1.1, 2.3, 52.0, 76.0, -0.10, 0.04, 0xcce4ff, 0.45));
 
-        // Salpicaduras y ondas diminutas cerca del jugador: un solo draw call,
-        // animación íntegramente en el vertex/fragment shader, sin física nueva.
-        const splashCount = 260;
-        const splashGeo = new THREE.BufferGeometry();
-        const splashPositions = new Float32Array(splashCount * 3);
-        const splashSeeds = new Float32Array(splashCount * 4);
-        for (let i = 0; i < splashCount; i++) {
-            splashSeeds[i*4]   = (Math.random() - 0.5) * 76;
-            splashSeeds[i*4+1] = (Math.random() - 0.5) * 76;
-            splashSeeds[i*4+2] = Math.random();
-            splashSeeds[i*4+3] = 6 + Math.random()*8;
+        // CÍRCULOS DE LLUVIA: anillos concéntricos horizontales que crecen en metros
+        // reales sobre el suelo negro. UN draw call, todos animados en GPU, sin nuevos objetos/fotograma.
+        const rippleCount = 260;
+        const rippleBase = new THREE.PlaneGeometry(2, 2);
+        const rippleGeometry = new THREE.InstancedBufferGeometry();
+        rippleGeometry.index = rippleBase.index;
+        rippleGeometry.setAttribute('position', rippleBase.getAttribute('position'));
+        rippleGeometry.setAttribute('uv', rippleBase.getAttribute('uv'));
+        const rippleSeeds = new Float32Array(rippleCount * 4);
+        for (let i = 0; i < rippleCount; i++) {
+            rippleSeeds[i * 4] = (Math.random() - 0.5) * 100; // x alrededor del jugador
+            rippleSeeds[i * 4 + 1] = (Math.random() - 0.5) * 100; // z alrededor del jugador
+            rippleSeeds[i * 4 + 2] = Math.random(); // desfase independiente
+            rippleSeeds[i * 4 + 3] = 0.68 + Math.random() * 1.25; // velocidad de expansión
         }
-        splashGeo.setAttribute('position', new THREE.BufferAttribute(splashPositions, 3));
-        splashGeo.setAttribute('aSplash', new THREE.BufferAttribute(splashSeeds, 4));
-        const splashMaterial = new THREE.ShaderMaterial({
-            uniforms: {uTime:rainUniforms.uTime, uCenterPos:rainUniforms.uCenterPos},
+        rippleGeometry.setAttribute('aRipple', new THREE.InstancedBufferAttribute(rippleSeeds, 4));
+        rippleGeometry.instanceCount = rippleCount;
+        const rippleMaterial = new THREE.ShaderMaterial({
+            uniforms: { uTime: rainUniforms.uTime, uCenterPos: rainUniforms.uCenterPos },
             vertexShader: `
-                uniform float uTime; uniform vec3 uCenterPos;
-                attribute vec4 aSplash; varying float vPhase;
+                uniform float uTime;
+                uniform vec3 uCenterPos;
+                attribute vec4 aRipple;
+                varying vec2 vRippleUV;
+                varying float vRippleAge;
                 void main() {
-                    vPhase = fract(uTime * 0.72 + aSplash.z);
-                    vec3 pos = vec3(uCenterPos.x + aSplash.x, 0.065, uCenterPos.z + aSplash.y);
-                    vec4 mv = modelViewMatrix * vec4(pos,1.0);
-                    gl_PointSize = clamp(aSplash.w * 35.0 / max(1.0,-mv.z), 1.0, 22.0);
-                    gl_Position = projectionMatrix * mv;
+                    float age = fract(aRipple.z + uTime * (0.43 + aRipple.w * 0.28));
+                    float radiusMeters = mix(0.12, 2.2, pow(age, 0.85));
+                    vRippleAge = age;
+                    vRippleUV = uv * 2.0 - 1.0;
+                    vec3 world = vec3(
+                        uCenterPos.x + aRipple.x + position.x * radiusMeters,
+                        0.095,
+                        uCenterPos.z + aRipple.y + position.y * radiusMeters
+                    );
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(world, 1.0);
                 }`,
             fragmentShader: `
-                varying float vPhase;
+                varying vec2 vRippleUV;
+                varying float vRippleAge;
                 void main() {
-                    vec2 p=gl_PointCoord-vec2(0.5);
-                    float radius=length(p)*2.0;
-                    float ring = 1.0-smoothstep(0.055,0.16,abs(radius - (0.18 + 0.7*vPhase)));
-                    float fade = sin(vPhase*3.14159265);
-                    gl_FragColor=vec4(vec3(0.42,0.68,0.85), ring*fade*0.20);
-                    if(gl_FragColor.a < 0.008) discard;
+                    float d = length(vRippleUV);
+                    // El radio visible aumenta físicamente con la escala de los vértices.
+                    float ring = 1.0 - smoothstep(0.035, 0.11, abs(d - 0.80));
+                    float secondary = 1.0 - smoothstep(0.028, 0.105, abs(d - 0.59));
+                    float fadeIn = smoothstep(0.0, 0.12, vRippleAge);
+                    float fadeOut = 1.0 - smoothstep(0.56, 1.0, vRippleAge);
+                    float opacity = (ring * 0.58 + secondary * 0.21) * fadeIn * fadeOut;
+                    if (opacity < 0.012 || d > 0.94) discard;
+                    gl_FragColor = vec4(0.55, 0.62, 0.68, opacity);
                 }`,
-            transparent:true, depthWrite:false, blending:THREE.AdditiveBlending
+            transparent: true,
+            depthWrite: false,
+            depthTest: true,
+            side: THREE.DoubleSide
         });
-        const rainSplashes = new THREE.Points(splashGeo, splashMaterial);
-        rainSplashes.frustumCulled = false;
-        rainSplashes.visible = false;
+        const rainSplashes = new THREE.Mesh(rippleGeometry, rippleMaterial);
+        rainSplashes.frustumCulled = false; // instancias se posicionan en shader respecto al jugador
+        rainSplashes.visible = true;
         scene.add(rainSplashes);
 
         // Ajustes de densidad visual, sin afectar colisiones ni mecánicas.
@@ -2606,7 +2641,7 @@
             });
             rainSystemGroup.children[0].geometry.setDrawRange(0, Math.round(13500 * p.rainFraction) * 2);
             rainSystemGroup.children[1].geometry.setDrawRange(0, Math.round(6500 * p.rainFraction) * 2);
-            splashGeo.setDrawRange(0, p.rippleCount);
+            rippleGeometry.instanceCount = p.rippleCount;
             if (!renderer.xr.isPresenting) renderer.xr.setFramebufferScaleFactor(p.xrScale);
             else if (typeof renderer.xr.setFoveation === 'function') {
                 try { renderer.xr.setFoveation(p.foveation); } catch (e) {}
@@ -2672,15 +2707,15 @@
 
         function triggerCloudLightning() {
             const boltGroup = new THREE.Group();
-            const isCloudToCloud = Math.random() < 0.65;
+            const isCloudToCloud = Math.random() < 0.14; // Predominan rayos que CAEN hasta el suelo
             const startX = (Math.random() - 0.5) * 780;
-            const startY = 230 + Math.random() * 110;
+            const startY = 430 + Math.random() * 145;
             const startZ = -180 + (Math.random() - 0.5) * 420;
             const startPt = new THREE.Vector3(startX, startY, startZ);
 
             const endPt = isCloudToCloud
                 ? new THREE.Vector3(startX + (Math.random() < 0.5 ? 1 : -1) * (160 + Math.random() * 220), startY - 35 - Math.random() * 65, startZ + (Math.random() - 0.5) * 160)
-                : new THREE.Vector3(startX + (Math.random() - 0.5) * 140, 12.0, startZ + (Math.random() - 0.5) * 140);
+                : new THREE.Vector3(startX + (Math.random() - 0.5) * 140, 0.55, startZ + (Math.random() - 0.5) * 140);
 
             const coreMat = new THREE.MeshBasicMaterial({
                 color: 0xe8f4ff,
@@ -2691,7 +2726,7 @@
             });
 
             const boltSegments = [];
-            const mainPts = subdivideLightningPath(startPt, endPt, 5, isCloudToCloud ? 28.0 : 36.0);
+            const mainPts = subdivideLightningPath(startPt, endPt, 5, isCloudToCloud ? 34.0 : 50.0);
             appendLightningSegments(boltSegments, mainPts, 1.35, 0.45);
 
             const mainVec = new THREE.Vector3().subVectors(endPt, startPt);
@@ -2747,7 +2782,7 @@
         // Ondas de choque al pisar el suelo mojado
         const stompShockwaves = [];
         for (let i = 0; i < 2; i++) {
-            const swGeo = new THREE.RingGeometry(8.0, 14.0, 48);
+            const swGeo = new THREE.RingGeometry(12.0, 21.0, 48);
             swGeo.rotateX(-Math.PI / 2);
             const swMat = new THREE.MeshBasicMaterial({
                 color: 0xff5500,
@@ -2826,6 +2861,7 @@
             colossalUltronAnchor.visible = true;
 
             sound.playJetpackEquip();
+            sound.playMechaStartingUp(); // Encendido al comenzar la secuencia del gigante
             sound.playUltronVoiceChord();
             startSoundtrackBGM();
             triggerControllerHaptics('both', 0.9, 250);
@@ -3416,17 +3452,21 @@
                 playerDolly.position.addScaledVector(_rtDir, moveX * airSpeed * dt);
             }
 
+            // Inercia adicional de la descarga; decae sin anular locomoción VR / teclado.
+            playerDolly.position.addScaledVector(p.shockImpulse, dt);
+            p.shockImpulse.multiplyScalar(Math.exp(-dt * 3.2));
+
             // Propulsión vertical del Jetpack a la mitad de velocidad (29.0 m/s máx)
             if (gameState.hasJetpack && leftGripThrust) {
                 p.vel.y = THREE.MathUtils.lerp(p.vel.y, 29.0, dt * 4.5);
-                sound.setJetpackThrusterActive(true, THREE.MathUtils.clamp(playerDolly.position.y / 380.0, 0, 1));
+                sound.setJetpackThrusterActive(true, THREE.MathUtils.clamp(playerDolly.position.y / 600.0, 0, 1));
                 triggerControllerHaptics('left', 0.22, 30);
             } else {
                 p.vel.y = Math.max(-34.0, p.vel.y - 24.0 * dt);
                 sound.setJetpackThrusterActive(false, 0);
             }
 
-            playerDolly.position.y = Math.min(435.0, playerDolly.position.y + p.vel.y * dt);
+            playerDolly.position.y = Math.min(650.0, playerDolly.position.y + p.vel.y * dt);
             if (playerDolly.position.y <= 0.0) {
                 playerDolly.position.y = 0.0;
                 p.vel.y = 0.0;
@@ -3461,18 +3501,16 @@
             const b = gameState.boss;
 
             // Actualizar uniforms de lluvia en GPU (Cero iteraciones en CPU)
-            rainSplashes.visible = gameState.hasJetpack;
+            rainSplashes.visible = true; // ondas desde antes de activar a Ultron
             rainUniforms.uTime.value = elapsedTime;
             rainUniforms.uCenterPos.value.copy(playerDolly.position);
 
-            // Relámpagos fractales en las nubes (sólo después de agarrar el Jetpack para mantener la oscuridad inicial)
+            // La tormenta y sus descargas comienzan ANTES de activar al Mecha.
             let activeLightningFlash = 0;
-            if (gameState.hasJetpack) {
-                nextLightningTimer -= dt;
-                if (nextLightningTimer <= 0) {
-                    nextLightningTimer = 2.6 + Math.random() * 4.2;
-                    triggerCloudLightning();
-                }
+            nextLightningTimer -= dt;
+            if (nextLightningTimer <= 0) {
+                nextLightningTimer = 2.3 + Math.random() * 3.6;
+                triggerCloudLightning();
             }
 
             for (let i = activeCloudLightnings.length - 1; i >= 0; i--) {
@@ -3491,8 +3529,9 @@
             stormFlashLight.intensity = activeLightningFlash * 4.2;
             stormFlashLight.visible = stormFlashLight.intensity > 0.01;
 
-            // Antes de tomar el Jetpack: oscuridad total, Ultron no se mueve ni se refleja
+            // Antes del Jetpack hay tormenta, niebla tenue y relámpagos; Ultron permanece apagado.
             if (!gameState.ultronAwakening) {
+                updateCloudLayers(elapsedTime, 0.20, activeLightningFlash);
                 bootSweepUniform.value = BOOT_START_Y;
                 keyLight.visible = false;
                 rimLightBlue.visible = false;
@@ -3511,7 +3550,7 @@
                 const currentY = THREE.MathUtils.lerp(BOOT_START_Y, BOOT_END_Y, easedBoot);
                 bootSweepUniform.value = currentY;
 
-                bootScannerLight.position.set(b.pos.x, Math.max(2, currentY), b.pos.z + 45);
+                bootScannerLight.position.set(b.pos.x, Math.max(2, currentY), b.pos.z + 67.5);
                 bootScannerLight.intensity = Math.sin(bootProgress * Math.PI) * 7.5;
                 bootScannerLight.visible = bootScannerLight.intensity > 0.01;
 
@@ -3520,12 +3559,12 @@
                 rimLightBlue.intensity = 2.4 * easedBoot;
                 rimLightBlue.visible = rimLightBlue.intensity > 0.01;
 
-                chestReactorLight.position.set(b.pos.x, 260, b.pos.z + 35);
-                chestReactorLight.intensity = 4.2 * THREE.MathUtils.smoothstep(currentY, 180, 310);
+                chestReactorLight.position.set(b.pos.x, 390, b.pos.z + 52);
+                chestReactorLight.intensity = 4.2 * THREE.MathUtils.smoothstep(currentY, 270, 465);
                 chestReactorLight.visible = chestReactorLight.intensity > 0.01;
 
-                handPlasmaLight.position.set(b.pos.x - 45, 220, b.pos.z + 45);
-                handPlasmaLight.intensity = 3.5 * THREE.MathUtils.smoothstep(currentY, 160, 290);
+                handPlasmaLight.position.set(b.pos.x - 67.5, 330, b.pos.z + 67.5);
+                handPlasmaLight.intensity = 3.5 * THREE.MathUtils.smoothstep(currentY, 240, 435);
                 handPlasmaLight.visible = handPlasmaLight.intensity > 0.01;
 
                 // Activar los halos volumétricos sólo cuando el barrido vertical los alcanza
@@ -3535,12 +3574,12 @@
                         return;
                     }
                     const worldEstY = (vs.localYEstimate + LOCAL_GROUND_OFFSET_Y) * COLOSSAL_SCALE;
-                    const mask = THREE.MathUtils.smoothstep(currentY, worldEstY - 12, worldEstY + 12);
+                    const mask = THREE.MathUtils.smoothstep(currentY, worldEstY - 18, worldEstY + 18);
                     vs.mat.opacity = mask * 0.48;
                     vs.sprite.visible = vs.mat.opacity > 0.01;
                 });
 
-                wetFloor.material.envMapIntensity = 0.22 * easedBoot;
+                wetFloor.material.envMapIntensity = 0.08 * easedBoot;
 
                 updateCloudLayers(elapsedTime, easedBoot, activeLightningFlash);
 
@@ -3559,7 +3598,7 @@
                 bootSweepUniform.value = BOOT_END_Y + 50.0;
                 bootScannerLight.intensity = 0.0;
                 bootScannerLight.visible = false;
-                wetFloor.material.envMapIntensity = 0.25;
+                wetFloor.material.envMapIntensity = 0.09;
                 const bossBarWrap = document.getElementById('boss-bar-wrapper');
                 if (bossBarWrap) bossBarWrap.style.opacity = '1';
                 sound.playUltronVoiceChord();
@@ -3710,10 +3749,10 @@
             }
 
             if (leftGait && leftGait.isImpactFrame && !prevLeftFootDown) {
-                triggerFootStomp(b.pos.x + 25, b.pos.z + leftGait.footForwardZ * COLOSSAL_SCALE, 0);
+                triggerFootStomp(b.pos.x + 37.5, b.pos.z + leftGait.footForwardZ * COLOSSAL_SCALE, 0);
             }
             if (rightGait && rightGait.isImpactFrame && !prevRightFootDown) {
-                triggerFootStomp(b.pos.x - 25, b.pos.z + rightGait.footForwardZ * COLOSSAL_SCALE, 1);
+                triggerFootStomp(b.pos.x - 37.5, b.pos.z + rightGait.footForwardZ * COLOSSAL_SCALE, 1);
             }
             prevLeftFootDown = leftGait ? leftGait.isImpactFrame : false;
             prevRightFootDown = rightGait ? rightGait.isImpactFrame : false;
@@ -3757,8 +3796,8 @@
                 }
             }
 
-            chestReactorLight.position.set(b.pos.x, 260, b.pos.z + 35);
-            handPlasmaLight.position.set(b.pos.x - 45, 220, b.pos.z + 45);
+            chestReactorLight.position.set(b.pos.x, 390, b.pos.z + 52);
+            handPlasmaLight.position.set(b.pos.x - 67.5, 330, b.pos.z + 67.5);
 
             stompShockwaves.forEach(sw => {
                 if (sw.active) {
@@ -3768,6 +3807,37 @@
                     if (sw.age >= 1.0) sw.active = false;
                 }
             });
+        }
+
+        // Barrera eléctrica de proximidad alrededor de Ultron, escalada a sus 562.5 m.
+        // El daño no es continuo: 2.3 s de cooldown para evitar ataques por fotograma.
+        const PROXIMITY_SHOCK_RADIUS = COLOSSAL_SCALE * 2.12; // ~159 m en horizontal
+        const PROXIMITY_SHOCK_MAX_Y = COLOSSAL_SCALE * 8.15; // altura total aproximada
+        const PROXIMITY_SHOCK_INTERVAL = 2.3;
+        const shockDir = new THREE.Vector3();
+        function updateUltronProximityShock(elapsedTime) {
+            const p = gameState.player;
+            const b = gameState.boss;
+            if (!gameState.ultronAwakening || gameState.isGameOver || b.defeatState !== 'NONE') return;
+            if (elapsedTime - p.lastShockTime < PROXIMITY_SHOCK_INTERVAL) return;
+            const dx = playerDolly.position.x - b.pos.x;
+            const dz = playerDolly.position.z - b.pos.z;
+            const distance = Math.hypot(dx, dz);
+            const playerY = playerDolly.position.y + 1.7;
+            if (distance > PROXIMITY_SHOCK_RADIUS || playerY > PROXIMITY_SHOCK_MAX_Y) return;
+
+            if (distance > 0.001) shockDir.set(dx / distance, 0, dz / distance);
+            else shockDir.set(Math.sin(b.facingYaw), 0, Math.cos(b.facingYaw));
+            p.lastShockTime = elapsedTime;
+            // Empuje inmediato + velocidad decreciente: separa al jugador incluso si mantiene el stick.
+            playerDolly.position.addScaledVector(shockDir, 17.0);
+            p.shockImpulse.copy(shockDir).multiplyScalar(116.0);
+            p.vel.y = Math.max(p.vel.y, 10.0); // elevación corta de la descarga
+            const sparkPos = getPlayerWorldPos().clone().addScaledVector(shockDir, -3.0);
+            spawnParticles(sparkPos, 0x9fc8ff, 18, 24, 1.4);
+            sound.playCriticalHit();
+            setHudFlashMessage('DESCARGA DE ULTRON: -20 HP / RETROCESO', 2.0);
+            damagePlayer(20);
         }
 
         // ============================================================================
@@ -4070,6 +4140,8 @@
             gameState.walkTime = 0;
             gameState.player.hp = 100;
             gameState.player.vel.set(0, 0, 0);
+            gameState.player.shockImpulse.set(0, 0, 0);
+            gameState.player.lastShockTime = -9999;
             playerDolly.position.set(0, 0, 44);
 
             gameState.boss.hp = 1200;
@@ -4091,7 +4163,7 @@
             jpPointLight.visible = true;
             lightningGroup.visible = true;
             wetFloor.material.envMapIntensity = 0.0;
-            rainSplashes.visible = false;
+            rainSplashes.visible = true;
             // Limpiar exclusivamente VFX de la partida anterior.
             persistentSmokePlumes.length = 0;
             clearSmokeVFX();
@@ -4101,7 +4173,8 @@
             activeTurbineExplosions.length = 0;
             activeCloudLightnings.forEach(disposeCloudLightning);
             activeCloudLightnings.length = 0;
-            nextLightningTimer = 2.2;
+            nextLightningTimer = 0.8;
+            prevLeftFootDown = prevRightFootDown = false;
             contactShadows.forEach(c=>c.mesh.visible=false);
 
             materials.emissiveCore.emissiveIntensity = 2.2;
@@ -4225,6 +4298,7 @@
                 if (leftController && leftController.userData.isSelecting) fireWeapon(leftController, leftWeaponMesh);
 
                 updateColossalUltronAndStorm(dt, elapsedTime);
+                updateUltronProximityShock(elapsedTime);
                 updateCombatAndParticles(dt, elapsedTime);
                 updateAllHUDs();
             }
