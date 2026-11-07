@@ -122,27 +122,13 @@
     <div id="jetpack-pickup-overlay" class="fixed inset-0 pointer-events-none opacity-0 transition-opacity duration-700 z-10"
          style="background: radial-gradient(circle, rgba(0, 243, 255, 0.35) 0%, rgba(255, 85, 0, 0.25) 60%, transparent 100%); mix-blend-mode: screen;"></div>
 
-    <!-- HUD MINIMALISTA (La vida verde aparece desde el inicio; Mecha Ultron aparece cuando empieza a caminar) -->
+    <!-- HUD del jugador: cronómetro y única barra de salud. -->
     <div id="hud" class="fixed inset-0 pointer-events-none z-20 flex flex-col items-center justify-start pt-6 sm:pt-8 px-4">
-        <div id="hud-bars-container" class="w-full max-w-lg flex flex-col items-center space-y-2">
-            <!-- Barra Roja Principal: Mecha Ultron (Oculta hasta que termina de encenderse y camina) -->
-            <div id="boss-bar-wrapper" class="w-full flex flex-col items-center opacity-0 transition-opacity duration-700">
-                <span class="font-orbitron font-bold text-xs sm:text-sm tracking-widest text-red-400 uppercase mb-1 drop-shadow-[0_0_8px_rgba(239,68,68,0.8)]">
-                    Mecha Ultron
-                </span>
-                <div class="w-full h-4 bg-red-950/80 border border-red-500/80 rounded overflow-hidden p-0.5 shadow-[0_0_15px_rgba(239,68,68,0.4)]">
-                    <div id="boss-hp-bar" class="h-full bg-gradient-to-r from-red-700 via-red-500 to-red-400 transition-all duration-100" style="width: 100%;"></div>
-                </div>
-            </div>
-
-            <!-- Barra Verde más chica abajo: Vida del Jugador (Visible desde el inicio) -->
+        <div id="hud-bars-container" class="w-full max-w-xs flex flex-col items-center gap-1">
+            <div id="battle-timer-dom" aria-live="off" style="display:none;color:#dcf9ff;text-shadow:0 0 9px #008cbb;letter-spacing:.18em"
+                 class="font-orbitron font-bold text-lg">04:00</div>
             <div class="w-3/5 h-2.5 bg-emerald-950/80 border border-emerald-500/80 rounded overflow-hidden p-0.5 shadow-[0_0_12px_rgba(16,185,129,0.35)]">
-                <div id="player-hp-bar" class="h-full bg-gradient-to-r from-emerald-600 to-green-400 transition-all duration-150" style="width: 100%;"></div>
-            </div>
-
-            <!-- Indicador de FPS en medio -->
-            <div id="fps-counter" class="font-orbitron font-bold text-xs sm:text-sm tracking-widest text-cyan-300 drop-shadow-[0_0_8px_rgba(0,243,255,0.85)] pt-1">
-                FPS: --
+                <div id="player-hp-bar" class="h-full bg-gradient-to-r from-emerald-600 to-green-400 transition-all duration-150" style="width:100%"></div>
             </div>
         </div>
     </div>
@@ -163,20 +149,26 @@
                 Bajo rayos que caen de las nubes y lluvia sobre un suelo negro, toma el <strong>Jetpack brillante en el centro</strong>. Verás cómo poco a poco se enciende desde los pies hasta la cabeza el colosal <strong>Ultron Prestige MK-X (Escala 75.0 / 562.5m)</strong> con sobrecarga de energía, y al encenderse por completo comenzará a caminar hacia ti. Destruye sus <strong>4 Turbinas de colores</strong> para hacerlas estallar en fuego y humo. <strong>¡No te acerques demasiado a Ultron! Su campo eléctrico causa daño y te repele.</strong>
             </p>
 
-            <!-- Leyenda de las 4 Turbinas Vulnerables -->
+            <!-- La selección se confirma antes de empezar; el enjambre no aparece hasta entonces. -->
+            <section id="codexia-team-picker" aria-label="Seleccionar equipo CODEXIA"
+                     class="mb-4 rounded-xl border border-cyan-500/60 bg-slate-950/90 px-4 py-3">
+                <div class="font-orbitron text-cyan-200 text-sm font-bold tracking-widest mb-2">EQUIPO CODEXIA · BATALLA FINAL</div>
+                <div class="flex justify-center items-center gap-5">
+                    <button id="team-minus" type="button" aria-label="Equipo anterior"
+                            class="team-step" style="font-size:28px;min-width:54px;min-height:48px;border-radius:10px;border:1px solid #41c9d5;background:#10232e;color:white">−</button>
+                    <output id="team-number" aria-live="polite" style="color:white;min-width:130px;font:bold 21px Orbitron,monospace">EQUIPO 1</output>
+                    <button id="team-plus" type="button" aria-label="Equipo siguiente"
+                            class="team-step" style="font-size:28px;min-width:54px;min-height:48px;border-radius:10px;border:1px solid #41c9d5;background:#10232e;color:white">+</button>
+                </div>
+                <p class="text-slate-300 text-[11px] mt-2">Elige del 1 al 20 antes de entrar. Tu calificación final se enviará a CODEXIA.</p>
+            </section>
+
+            <!-- Correspondencia exacta: amarillo > rojo > verde > azul > amarillo -->
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4 text-[11px]">
-                <div class="px-2 py-1.5 rounded bg-black/80 border border-green-500 text-green-400 font-bold">
-                    Hombro Izq: ARC-INT (Verde)
-                </div>
-                <div class="px-2 py-1.5 rounded bg-black/80 border border-cyan-400 text-cyan-300 font-bold">
-                    Hombro Der: ARC-FLOAT (Cian)
-                </div>
-                <div class="px-2 py-1.5 rounded bg-black/80 border border-yellow-400 text-yellow-300 font-bold">
-                    Cadera Izq: ARC-STRING (Amarillo)
-                </div>
-                <div class="px-2 py-1.5 rounded bg-black/80 border border-purple-500 text-purple-400 font-bold">
-                    Cadera Der: ARC-BOOL (Morado)
-                </div>
+                <div class="px-2 py-1.5 rounded bg-black/80 border border-green-500 text-green-400 font-bold">Hombro izq.: VERDE<br>Se daña con ROJO</div>
+                <div class="px-2 py-1.5 rounded bg-black/80 border border-blue-500 text-blue-300 font-bold">Hombro der.: AZUL<br>Se daña con VERDE</div>
+                <div class="px-2 py-1.5 rounded bg-black/80 border border-yellow-400 text-yellow-300 font-bold">Cadera izq.: AMARILLO<br>Se daña con AZUL</div>
+                <div class="px-2 py-1.5 rounded bg-black/80 border border-red-500 text-red-300 font-bold">Cadera der.: ROJO<br>Se daña con AMARILLO</div>
             </div>
 
             <!-- Controles VR y PC -->
@@ -206,7 +198,7 @@
                     <option value="quest3">Meta Quest 3 — detalle alto</option>
                     <option value="questpro">Meta Quest Pro — equilibrado</option>
                 </select>
-                <span class="text-slate-400 text-[11px]">Puedes seleccionar manualmente el visor si no se detecta.</span>
+                <span class="text-slate-400 text-[11px]">Puedes seleccionar manualmente el visor si no se detecta. Límite de batalla: 4 minutos desde el despertar.</span>
             </div>
             <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
                 <button id="start-btn" class="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-orange-600 via-red-600 to-amber-500 hover:from-orange-500 hover:to-amber-400 text-white font-orbitron font-bold text-sm sm:text-base tracking-widest uppercase rounded-xl shadow-[0_0_35px_rgba(255,69,0,0.65)] transition transform hover:scale-105 active:scale-95 cursor-pointer">
@@ -235,18 +227,26 @@
         // 1. CONFIGURACIÓN DE COLORES ARC, HÁPTICA WEBXR Y SONIDOS MP3
         // ============================================================================
         const weaponColors = {
-            int: 0x00ff00,    // Verde
-            float: 0x00ffff,  // Cian
-            string: 0xffff00, // Amarillo
-            bool: 0xaa00ff    // Morado
+            int: 0x00ed55,      // VERDE
+            float: 0x187dff,    // AZUL
+            string: 0xffdf00,   // AMARILLO
+            bool: 0xff3333      // ROJO
         };
         const weaponNames = {
-            int: 'ARC-INT (VERDE)',
-            float: 'ARC-FLOAT (CIAN)',
-            string: 'ARC-STRING (AMARILLO)',
-            bool: 'ARC-BOOL (MORADO)'
+            int: 'ARC-VERDE',
+            float: 'ARC-AZUL',
+            string: 'ARC-AMARILLO',
+            bool: 'ARC-ROJO'
         };
-        const unlockedWeapons = ['int', 'float', 'string', 'bool'];
+        // La turbina sólo acepta un disparo del color que la contrarresta.
+        // AMARILLO -> ROJO; ROJO -> VERDE; VERDE -> AZUL; AZUL -> AMARILLO.
+        const weaknessByTurbine = Object.freeze({
+            bool: 'string', // Turbina roja <- pistola amarilla
+            int: 'bool',    // Turbina verde <- pistola roja
+            float: 'int',   // Turbina azul <- pistola verde
+            string: 'float' // Turbina amarilla <- pistola azul
+        });
+        const unlockedWeapons = ['string', 'int', 'bool', 'float']; // AMARILLO, VERDE, ROJO, AZUL
         let currentWeaponIndex = 0;
         let weaponSwitchCooldown = 0;
         let rightStickWeaponAxisWasActive = false;
@@ -258,6 +258,7 @@
         const ROBOT_POWERUP_AUDIO_URL = './robot_encendido.mp3'; // Nuevo encendido: inicia al terminar el rugido
         const ROBOT_STEP_AUDIO_URL = './RobotStep.mp3'; // Pisadas sincronizadas
         const JETPACK_THRUST_AUDIO_URL = './jetpack_ligero.mp3'; // Clip aportado por el usuario; bucle mientras impulsa
+        const THUNDER_AUDIO_URL = './trueno_relampago.mp3'; // Trueno grabado y comprimido para rayos de tormenta
 
         const soundCache = new Map();
         function playSoundResource(url, volume = 1.0) {
@@ -303,7 +304,7 @@
         }
 
         // Audios locales, precargados; el rugido termina ANTES de comenzar el encendido.
-        for (const url of [STARTING_UP_AUDIO_URL, ROBOT_POWERUP_AUDIO_URL, ROBOT_STEP_AUDIO_URL, SHOT_AUDIO_URL, BOSS_SHOOT_AUDIO_URL, JETPACK_THRUST_AUDIO_URL]) {
+        for (const url of [STARTING_UP_AUDIO_URL, ROBOT_POWERUP_AUDIO_URL, ROBOT_STEP_AUDIO_URL, SHOT_AUDIO_URL, BOSS_SHOOT_AUDIO_URL, JETPACK_THRUST_AUDIO_URL, THUNDER_AUDIO_URL]) {
             const clip = new Audio(url);
             clip.preload = 'auto';
             clip.load();
@@ -414,7 +415,11 @@ class SoundSystem {
     playArmorRicochet() {}
     playTurbineDestroyed() {}
     playPowerDownCollapse() {}
-    playThunder() {}
+    playThunder(intensity = 1.0) {
+        // Grabación de trueno con un pool de tres voces; permite relámpagos cercanos
+        // sin crear osciladores ni reiniciar el audio en cada fotograma.
+        playPooledFireSound(THUNDER_AUDIO_URL, THREE.MathUtils.clamp(0.60 * intensity, 0.35, 0.78), 3);
+    }
 }
 
         const sound = new SoundSystem();
@@ -586,6 +591,7 @@ class SoundSystem {
                 try { renderer.xr.setFoveation(VISUAL_PRESETS[visualProfile].foveation); }
                 catch (e) { console.warn('Foveación no disponible en esta sesión:',e); }
             }
+            lockSelectedTeam();
             document.body.classList.add('vr-active');
             if (passwordOpen) { passwordMesh.visible = true; passwordInput.blur(); }
             document.body.classList.add('game-active');
@@ -600,17 +606,18 @@ class SoundSystem {
         });
         document.body.appendChild(vrButton);
 
-        // HUD 3D flotante dentro del casco VR (depthWrite: false y fog: false evitan el cuadro oscuro en el compositor VR)
+        // HUD 3D del jugador: cronómetro arriba y única barra de salud abajo.
         const hudCanvas = document.createElement('canvas');
-        hudCanvas.width = 512;
-        hudCanvas.height = 168;
+        hudCanvas.width = 268;
+        hudCanvas.height = 92;
         const vrHudCtx = hudCanvas.getContext('2d');
         const vrHudTex = new THREE.CanvasTexture(hudCanvas);
         const vrHudMesh = new THREE.Mesh(
-            new THREE.PlaneGeometry(1.45, 0.48),
+            new THREE.PlaneGeometry(0.76, 0.26),
             new THREE.MeshBasicMaterial({
                 map: vrHudTex,
                 transparent: true,
+                alphaTest: 0.025, // Elimina fragmentos transparentes y evita el recuadro oscuro en Quest
                 depthTest: false,
                 depthWrite: false,
                 fog: false
@@ -978,9 +985,8 @@ class SoundSystem {
 
         let gameOverMesh = null;
         let lastHudPlayerHp = -1;
-        let lastHudBossHp = -1;
-        let lastHudFps = -1;
-        let lastHudAwake = false;
+        let lastHudTimerSecond = -1;
+        let lastHudTimerActive = false;
 
         // ============================================================================
         // 4. ESTADO GLOBAL DE LA EXPERIENCIA Y LAS 4 TURBINAS VULNERABLES
@@ -988,7 +994,13 @@ class SoundSystem {
         const gameState = {
             isRunning: false,
             isGameOver: false,
+            team: null,
             hasJetpack: false,
+            battle: {
+                startedMs: null, endedMs: null, result: null,
+                shotsFired: 0, correctHits: 0, wrongHits: 0, damageTaken: 0,
+                uploadStatus: 'idle', uploadError: ''
+            },
             ultronAwakening: false,
             ultronFullyAwake: false,
             sequenceTime: 0,
@@ -1007,8 +1019,8 @@ class SoundSystem {
                 isJetpackThrusting: false
             },
             boss: {
-                hp: 1200,
-                maxHp: 1200,
+                hp: 3600,
+                maxHp: 3600,
                 pos: new THREE.Vector3(0, 0, -235),
                 facingYaw: 0,
                 handAttackState: 'COOLDOWN', // 'COOLDOWN' -> 'CHARGING'
@@ -1026,9 +1038,106 @@ class SoundSystem {
         const keys = {};
         const clock = new THREE.Clock();
         let isMouseDownLeft = false;
-        let fpsFrameCount = 0;
-        let fpsLastTime = performance.now();
-        let currentFps = 60;
+
+        const BATTLE_DURATION_SECONDS = 240;
+        const SUPABASE_URL = 'https://zgpfcmvjmjfaphtudmis.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_0uQxgvjB7S7eCSqssUlPnA_Brhj-zx7';
+        const CODEXIA_BATALLA_FINAL = 5; // Talleres 1..4; batalla final = 5.
+        let selectedTeam = 1;
+        const teamNumber = document.getElementById('team-number');
+        function changeTeam(by) {
+            selectedTeam = THREE.MathUtils.clamp(selectedTeam + by, 1, 20);
+            teamNumber.textContent = `EQUIPO ${selectedTeam}`;
+        }
+        document.getElementById('team-minus').addEventListener('click', () => changeTeam(-1));
+        document.getElementById('team-plus').addEventListener('click', () => changeTeam(+1));
+        function lockSelectedTeam() {
+            if (gameState.team === null) gameState.team = selectedTeam;
+        }
+        function newBattleRecord() {
+            return {
+                startedMs: null, endedMs: null, result: null,
+                shotsFired: 0, correctHits: 0, wrongHits: 0, damageTaken: 0,
+                uploadStatus: 'idle', uploadError: ''
+            };
+        }
+        function startBattleTimer() {
+            if (gameState.battle.startedMs !== null) return;
+            gameState.battle.startedMs = performance.now();
+            lastHudTimerSecond = -1;
+        }
+        function getBattleSecondsLeft() {
+            const battle = gameState.battle;
+            if (battle.startedMs === null) return BATTLE_DURATION_SECONDS;
+            const end = battle.endedMs ?? performance.now();
+            return Math.max(0, BATTLE_DURATION_SECONDS - (end - battle.startedMs) / 1000);
+        }
+        function formatBattleClock(seconds) {
+            const total = Math.max(0, Math.ceil(seconds));
+            return `${String(Math.floor(total / 60)).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`;
+        }
+        function calculateBattleGrade(won) {
+            const battle = gameState.battle;
+            const accuracy = battle.shotsFired > 0 ? battle.correctHits / battle.shotsFired : 0;
+            const survival = Math.max(0, 1 - battle.damageTaken / gameState.player.maxHp);
+            const seconds = battle.startedMs === null ? BATTLE_DURATION_SECONDS :
+                Math.max(0, ((battle.endedMs ?? performance.now()) - battle.startedMs) / 1000);
+            const speed = Math.max(0, 1 - seconds / BATTLE_DURATION_SECONDS);
+            // Únicamente la victoria valida puntos: precisión 40%, vida conservada 35%, rapidez 25%.
+            // En una derrota, el registro es 0, pero conservamos estadísticas para diagnóstico.
+            return {
+                score: won ? Math.round(100 * (0.40 * accuracy + 0.35 * survival + 0.25 * speed)) : 0,
+                accuracy: Math.round(accuracy * 100),
+                damageTaken: battle.damageTaken,
+                seconds: Math.round(seconds)
+            };
+        }
+        async function enviarScore(equipo, taller, score) {
+            if (!Number.isInteger(equipo) || equipo < 1 || equipo > 20) throw new Error('Equipo fuera del rango 1..20');
+            if (taller !== CODEXIA_BATALLA_FINAL) throw new Error('Taller no válido para esta batalla');
+            if (!Number.isInteger(score) || score < 0 || score > 100) throw new Error('Puntuación fuera de rango');
+            const respuesta = await fetch(`${SUPABASE_URL}/rest/v1/rpc/registrar_taller`, {
+                method: 'POST',
+                headers: {'apikey': SUPABASE_KEY, 'Content-Type': 'application/json'},
+                body: JSON.stringify({p_equipo: equipo, p_taller: taller, p_puntaje: score})
+            });
+            if (!respuesta.ok) throw new Error(await respuesta.text());
+            const raw = await respuesta.text();
+            return raw ? JSON.parse(raw) : null;
+        }
+        async function submitBattleGrade(result) {
+            const battle = gameState.battle;
+            if (!result || result !== battle.result || battle.uploadStatus === 'sending' || battle.uploadStatus === 'saved') return;
+            battle.uploadStatus = 'sending';
+            battle.uploadError = '';
+            redrawGameOverPanel();
+            try {
+                await enviarScore(result.team, CODEXIA_BATALLA_FINAL, result.grade.score);
+                battle.uploadStatus = 'saved';
+            } catch (err) {
+                battle.uploadStatus = 'error';
+                battle.uploadError = String(err?.message || err).slice(0, 220);
+                console.warn('CODEXIA: no se pudo publicar la puntuación:', battle.uploadError);
+            }
+            if (gameState.battle.result === result) redrawGameOverPanel();
+        }
+        function finishBattle(won, reason = '') {
+            const battle = gameState.battle;
+            if (battle.result) return battle.result;
+            battle.endedMs = performance.now();
+            lockSelectedTeam();
+            const result = {
+                team: gameState.team, won, reason,
+                grade: calculateBattleGrade(won)
+            };
+            battle.result = result;
+            submitBattleGrade(result); // Un solo envío por intento, al vencer o perder por daño/tiempo.
+            return result;
+        }
+        function isBattleTimeExpired() {
+            return gameState.battle.startedMs !== null && !gameState.battle.result && getBattleSecondsLeft() <= 0;
+        }
+
 
         function setHudFlashMessage(msg, duration = 3.0) {
             gameState.hudAlertText = msg;
@@ -1500,8 +1609,8 @@ class SoundSystem {
                     glowRingInner,
                     centerEye,
                     glowSprite,
-                    hp: 300,
-                    maxHp: 300,
+                    hp: 900,
+                    maxHp: 900,
                     destroyed: false,
                     localYEstimate
                 });
@@ -1838,7 +1947,7 @@ class SoundSystem {
             codpiece.rotation.x = -0.08;
             pelvisGroup.add(codpiece);
 
-            // Turbinas de Cadera: Izquierda (side=1 -> 'string' Amarillo) y Derecha (side=-1 -> 'bool' Morado)
+            // Turbinas de Cadera: izquierda AMARILLA, derecha ROJA
             [-1, 1].forEach(side => {
                 const hipArch = new THREE.Mesh(
                     new THREE.TorusGeometry(0.56, 0.145, 16, 32, Math.PI * 1.22),
@@ -3114,6 +3223,7 @@ class SoundSystem {
             speakJarvis('jetpack', true); // Se reproduce solamente tras validar el password.
             gameState.ultronAwakening = true;
             gameState.sequenceTime = 0;
+            startBattleTimer();
             jetpackPickupGroup.visible = false;
             jpPointLight.visible = false;
             colossalUltronAnchor.visible = true;
@@ -3135,8 +3245,8 @@ class SoundSystem {
         // 10. PISTOLAS DUALES ARC EN VR CON CAMBIO DE COLOR Y DISPARO MP3
         // ============================================================================
         const weaponMat = new THREE.MeshLambertMaterial({
-            color: weaponColors.int,
-            emissive: weaponColors.int,
+            color: weaponColors.string,
+            emissive: weaponColors.string,
             emissiveIntensity: 0.95
         });
 
@@ -3151,7 +3261,7 @@ class SoundSystem {
             mesh.add(core);
 
             const muzzleFlashMat = new THREE.MeshBasicMaterial({
-                color: weaponColors.int,
+                color: weaponColors.string,
                 transparent: true,
                 opacity: 0.0,
                 blending: THREE.AdditiveBlending,
@@ -3166,7 +3276,7 @@ class SoundSystem {
                 new THREE.Vector3(0, 0.06, 0),
                 new THREE.Vector3(0, 0.06, -120)
             ]);
-            const laserMat = new THREE.LineBasicMaterial({ color: weaponColors.int, transparent: true, opacity: 0.55 });
+            const laserMat = new THREE.LineBasicMaterial({ color: weaponColors.string, transparent: true, opacity: 0.55 });
             const aimLine = new THREE.Line(laserGeo, laserMat);
             aimLine.name = 'aimLine';
             mesh.add(aimLine);
@@ -3550,8 +3660,16 @@ class SoundSystem {
 
             if (gameState.isGameOver && gameOverMesh) {
                 const ray = new THREE.Raycaster(startPos, direction);
-                if (ray.intersectObject(gameOverMesh).length > 0) {
-                    resetExperience();
+                const hits = ray.intersectObject(gameOverMesh);
+                if (hits.length > 0) {
+                    // En VR, disparar sobre la línea de estado reintenta el envío fallido.
+                    // Cualquier otra zona del panel reinicia la partida.
+                    const uvY = hits[0].uv?.y ?? -1;
+                    if (gameState.battle.uploadStatus === 'error' && uvY >= 0.17 && uvY <= 0.34) {
+                        submitBattleGrade(gameState.battle.result);
+                    } else {
+                        resetExperience();
+                    }
                 }
                 return;
             }
@@ -3585,6 +3703,9 @@ class SoundSystem {
                 }
             }
             sound.playPlayerShoot();
+            if (gameState.battle.startedMs !== null && !gameState.battle.result) {
+                gameState.battle.shotsFired++;
+            }
             const type = getCurrentWeaponType();
             const hex = weaponColors[type] || 0x00ff00;
 
@@ -3874,8 +3995,6 @@ class SoundSystem {
                 bootSweepUniform.value = BOOT_END_Y + 50.0;
                 bootScannerLight.intensity = 0.0;
                 bootScannerLight.visible = false;
-                const bossBarWrap = document.getElementById('boss-bar-wrapper');
-                if (bossBarWrap) bossBarWrap.style.opacity = '1';
                 // El roar ya sonó al despertar; no repetirlo al empezar a caminar.
             }
 
@@ -4139,8 +4258,12 @@ class SoundSystem {
         // 14. COMBATE, COLISIONES EN LAS 4 TURBINAS Y PARTÍCULAS
         // ============================================================================
         function damagePlayer(amount) {
-            if (!gameState.isRunning || gameState.isGameOver) return;
-            gameState.player.hp = Math.max(0, gameState.player.hp - amount);
+            if (!gameState.isRunning || gameState.isGameOver || gameState.battle.result?.won) return;
+            const before = gameState.player.hp;
+            gameState.player.hp = Math.max(0, before - amount);
+            if (gameState.battle.startedMs !== null && !gameState.battle.result) {
+                gameState.battle.damageTaken += before - gameState.player.hp;
+            }
             gameState.cameraShake = Math.min(1.5, gameState.cameraShake + 0.55);
             triggerControllerHaptics('both', 0.9, 180);
 
@@ -4191,7 +4314,10 @@ class SoundSystem {
                         if (pb.mesh.position.distanceTo(_turbineWorldPos) < hitRadius) {
                             speakJarvis('switch');
                             hit = true;
-                            if (pb.type === vt.type) {
+                            if (pb.type === weaknessByTurbine[vt.type]) {
+                                if (gameState.battle.startedMs !== null && !gameState.battle.result) {
+                                    gameState.battle.correctHits++;
+                                }
                                 vt.hp = Math.max(0, vt.hp - pb.damage);
                                 sound.playCriticalHit();
                                 spawnParticles(pb.mesh.position, vt.colorHex, 22, 34, 1.8);
@@ -4219,9 +4345,13 @@ class SoundSystem {
                                         gameState.boss.hp = 0;
                                         gameState.boss.defeatState = 'DYING';
                                         gameState.boss.defeatTimer = 0;
+                                        finishBattle(true, 'Ultron derrotado'); // Se congela el cronómetro al destruir la 4.ª turbina.
                                     }
                                 }
                             } else {
+                                if (gameState.battle.startedMs !== null && !gameState.battle.result) {
+                                    gameState.battle.wrongHits++;
+                                }
                                 sound.playArmorRicochet();
                                 spawnParticles(pb.mesh.position, 0xffaa00, 8, 16, 1.0);
                             }
@@ -4295,95 +4425,92 @@ class SoundSystem {
         }
 
         // ============================================================================
-        // 15. HUD MINIMALISTA Y CONTADOR DE FPS CON DIRTY-CHECKING
+        // 15. HUD: SÓLO CRONÓMETRO Y VIDA DEL JUGADOR (PC y visores Quest).
         // ============================================================================
         function updateAllHUDs() {
-            const p = gameState.player;
-            const b = gameState.boss;
-
-            const roundedPlayerHp = Math.round(p.hp);
-            const roundedBossHp = Math.round(b.hp);
-
-            // Sólo actualizar DOM y CanvasTexture en GPU cuando algún valor realmente haya cambiado
-            if (
-                roundedPlayerHp === lastHudPlayerHp &&
-                roundedBossHp === lastHudBossHp &&
-                currentFps === lastHudFps &&
-                gameState.ultronFullyAwake === lastHudAwake
-            ) {
-                return;
-            }
-
-            lastHudPlayerHp = roundedPlayerHp;
-            lastHudBossHp = roundedBossHp;
-            lastHudFps = currentFps;
-            lastHudAwake = gameState.ultronFullyAwake;
+            const player = gameState.player;
+            const roundedHp = Math.round(player.hp);
+            const timerActive = gameState.battle.startedMs !== null;
+            const seconds = timerActive ? Math.ceil(getBattleSecondsLeft()) : -1;
+            if (roundedHp === lastHudPlayerHp && seconds === lastHudTimerSecond && timerActive === lastHudTimerActive) return;
+            lastHudPlayerHp = roundedHp;
+            lastHudTimerSecond = seconds;
+            lastHudTimerActive = timerActive;
 
             const playerBarEl = document.getElementById('player-hp-bar');
-            if (playerBarEl) playerBarEl.style.width = `${(p.hp / p.maxHp) * 100}%`;
-
-            const bossBarEl = document.getElementById('boss-hp-bar');
-            if (bossBarEl) bossBarEl.style.width = `${(b.hp / b.maxHp) * 100}%`;
-
-            const fpsCounterEl = document.getElementById('fps-counter');
-            if (fpsCounterEl) fpsCounterEl.textContent = `FPS: ${currentFps}`;
-
-            // Renderizar HUD 3D en el visor VR (512x168)
-            vrHudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
-
-            const centerX = hudCanvas.width / 2;
-            const bossBarW = 240;
-            const bossBarH = 10;
-            const bossBarX = centerX - bossBarW / 2;
-            const bossBarY = 24;
-
-            if (gameState.ultronFullyAwake) {
-                vrHudCtx.textAlign = 'center';
-                vrHudCtx.fillStyle = '#f87171';
-                vrHudCtx.font = 'bold 12px Orbitron, Courier New';
-                vrHudCtx.fillText('MECHA ULTRON', centerX, bossBarY - 5);
-
-                vrHudCtx.fillStyle = 'rgba(60, 5, 10, 0.78)';
-                vrHudCtx.fillRect(bossBarX, bossBarY, bossBarW, bossBarH);
-                vrHudCtx.strokeStyle = '#ef4444';
-                vrHudCtx.lineWidth = 1.5;
-                vrHudCtx.strokeRect(bossBarX, bossBarY, bossBarW, bossBarH);
-
-                vrHudCtx.fillStyle = '#ef4444';
-                vrHudCtx.fillRect(bossBarX + 1, bossBarY + 1, Math.max(0, (b.hp / b.maxHp) * (bossBarW - 2)), bossBarH - 2);
+            if (playerBarEl) playerBarEl.style.width = `${100 * player.hp / player.maxHp}%`;
+            const timerEl = document.getElementById('battle-timer-dom');
+            if (timerEl) {
+                timerEl.style.display = timerActive ? 'block' : 'none';
+                timerEl.textContent = formatBattleClock(seconds);
+                timerEl.style.color = seconds <= 30 ? '#ff6b6b' : '#dcf9ff';
             }
 
-            // Barra Verde de Vida del Jugador (siempre visible desde el inicio)
-            const playerBarW = 148;
-            const playerBarH = 7;
-            const playerBarX = centerX - playerBarW / 2;
-            const playerBarY = 42;
-
-            vrHudCtx.fillStyle = 'rgba(5, 40, 20, 0.75)';
-            vrHudCtx.fillRect(playerBarX, playerBarY, playerBarW, playerBarH);
+            vrHudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
+            const cx = hudCanvas.width / 2;
+            if (timerActive) {
+                vrHudCtx.fillStyle = seconds <= 30 ? '#ff7777' : '#d9faff';
+                vrHudCtx.font = 'bold 29px Orbitron, Courier New';
+                vrHudCtx.textAlign = 'center';
+                vrHudCtx.fillText(formatBattleClock(seconds), cx, 47);
+            }
+            const barW = 172, barH = 11, barX = cx - barW / 2, barY = timerActive ? 62 : 40;
+            vrHudCtx.fillStyle = 'rgba(5,40,20,0.70)';
+            vrHudCtx.fillRect(barX, barY, barW, barH);
             vrHudCtx.strokeStyle = '#22c55e';
-            vrHudCtx.lineWidth = 1.2;
-            vrHudCtx.strokeRect(playerBarX, playerBarY, playerBarW, playerBarH);
+            vrHudCtx.lineWidth = 2;
+            vrHudCtx.strokeRect(barX, barY, barW, barH);
             vrHudCtx.fillStyle = '#22c55e';
-            vrHudCtx.fillRect(playerBarX + 1, playerBarY + 1, Math.max(0, (p.hp / p.maxHp) * (playerBarW - 2)), playerBarH - 2);
-
-            // Imprimir FPS en medio del visor VR
-            vrHudCtx.textAlign = 'center';
-            vrHudCtx.fillStyle = '#00f3ff';
-            vrHudCtx.font = 'bold 13px Orbitron, Courier New';
-            vrHudCtx.fillText(`FPS: ${currentFps}`, centerX, playerBarY + playerBarH + 18);
-
+            vrHudCtx.fillRect(barX + 1, barY + 1,
+                Math.max(0, player.hp / player.maxHp * (barW - 2)), barH - 2);
             vrHudTex.needsUpdate = true;
         }
 
         // ============================================================================
         // 16. EVENTOS DE TECLADO, RATÓN Y BOTÓN DE INICIO
         // ============================================================================
-        function endExperience(playerWon) {
+        function drawGameOverPanel(ctx, result, battle) {
+            const saved = battle.uploadStatus === 'saved';
+            const status = saved ? 'GUARDADO EN CODEXIA' : battle.uploadStatus === 'error' ?
+                'ERROR: APUNTA AQUÍ PARA REINTENTAR (O R)' : 'ENVIANDO A CODEXIA...';
+            ctx.clearRect(0, 0, 1024, 640);
+            ctx.fillStyle = 'rgba(3, 9, 18, 0.95)'; ctx.fillRect(0, 0, 1024, 640);
+            ctx.strokeStyle = result.won ? '#28dc90' : '#f87171';
+            ctx.lineWidth = 10; ctx.strokeRect(12, 12, 1000, 616);
+            ctx.textAlign = 'center';
+            ctx.fillStyle = result.won ? '#53ffaa' : '#ff9b9b';
+            ctx.font = 'bold 59px Orbitron, Courier New';
+            ctx.fillText(result.won ? 'ULTRON DESTRUIDO' : (result.reason === 'Tiempo agotado' ? 'TIEMPO AGOTADO' : 'SISTEMA CAÍDO'), 512, 111);
+            ctx.fillStyle = '#d8f6ff';
+            ctx.font = 'bold 35px Orbitron, Courier New';
+            ctx.fillText(`EQUIPO ${result.team}  ·  BATALLA FINAL`, 512, 182);
+            ctx.fillStyle = '#ffe28e';
+            ctx.font = 'bold 88px Orbitron, Courier New';
+            ctx.fillText(`${result.grade.score} / 100`, 512, 290);
+            ctx.fillStyle = '#d1e7ec';
+            ctx.font = 'bold 27px Courier New';
+            ctx.fillText(`PRECISIÓN ${result.grade.accuracy}%   ·   DAÑO RECIBIDO ${result.grade.damageTaken}`, 512, 364);
+            ctx.fillText(`TIEMPO ${formatBattleClock(result.grade.seconds)}   ·   ACIERTOS ${battle.correctHits}/${battle.shotsFired}`, 512, 407);
+            ctx.fillStyle = saved ? '#7df4bb' : battle.uploadStatus === 'error' ? '#ff9e9e' : '#9bd7ff';
+            ctx.font = 'bold 29px Courier New';
+            ctx.fillText(status, 512, 490);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 27px Courier New';
+            ctx.fillText('[ DISPARA AQUÍ PARA REINICIAR ]', 512, 565);
+        }
+        function redrawGameOverPanel() {
+            if (!gameOverMesh || !gameOverMesh.userData.endCtx || !gameState.battle.result) return;
+            drawGameOverPanel(gameOverMesh.userData.endCtx, gameState.battle.result, gameState.battle);
+            gameOverMesh.material.map.needsUpdate = true;
+        }
+        function endExperience(playerWon, reason = '') {
+            if (gameState.isGameOver) return;
+            gameState.isGameOver = true;
             sound.stopJetpack();
             stopAwakeningSoundSequence();
-            speakJarvis(playerWon ? 'victory' : 'death', true);
-            gameState.isGameOver = true;
+            if (playerWon) speakJarvis('victory', true);
+            else if (reason !== 'Tiempo agotado') speakJarvis('death', true);
+            const result = finishBattle(playerWon, reason);
             if (gameOverMesh) {
                 camera.remove(gameOverMesh);
                 gameOverMesh.material.map.dispose();
@@ -4393,31 +4520,17 @@ class SoundSystem {
             }
             const endCanvas = document.createElement('canvas');
             endCanvas.width = 1024;
-            endCanvas.height = 512;
+            endCanvas.height = 640;
             const ctx = endCanvas.getContext('2d');
-            ctx.fillStyle = 'rgba(5, 8, 15, 0.92)';
-            ctx.fillRect(0, 0, 1024, 512);
-            ctx.strokeStyle = playerWon ? '#22c55e' : '#ef4444';
-            ctx.lineWidth = 12;
-            ctx.strokeRect(10, 10, 1004, 492);
-            ctx.textAlign = 'center';
-            ctx.fillStyle = playerWon ? '#4ade80' : '#f87171';
-            ctx.font = 'bold 68px Orbitron, Courier New';
-            ctx.fillText(playerWon ? 'MECHA ULTRON DESTRUIDO' : 'SISTEMA CAÍDO', 512, 210);
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 42px Courier New';
-            ctx.fillText('[ DISPARA AQUÍ PARA REINICIAR ]', 512, 340);
-
+            drawGameOverPanel(ctx, result, gameState.battle);
             gameOverMesh = new THREE.Mesh(
-                new THREE.PlaneGeometry(1.6, 0.8),
+                new THREE.PlaneGeometry(1.85, 1.15),
                 new THREE.MeshBasicMaterial({
                     map: new THREE.CanvasTexture(endCanvas),
-                    transparent: true,
-                    depthTest: false,
-                    depthWrite: false,
-                    fog: false
+                    transparent: true, depthTest: false, depthWrite: false, fog: false
                 })
             );
+            gameOverMesh.userData.endCtx = ctx;
             gameOverMesh.renderOrder = 1002;
             gameOverMesh.position.set(0, 0, -1.5);
             camera.add(gameOverMesh);
@@ -4445,6 +4558,12 @@ class SoundSystem {
                 gameOverMesh = null;
             }
             gameState.isGameOver = false;
+            gameState.battle = newBattleRecord();
+            currentWeaponIndex = 0; // Reinicia en amarillo.
+            updateWeaponMaterial();
+            lastHudPlayerHp = -1;
+            lastHudTimerSecond = -1;
+            lastHudTimerActive = false;
             gameState.hasJetpack = false;
             gameState.ultronAwakening = false;
             gameState.ultronFullyAwake = false;
@@ -4456,7 +4575,7 @@ class SoundSystem {
             gameState.player.lastShockTime = -9999;
             playerDolly.position.set(0, 0, 210);
 
-            gameState.boss.hp = 1200;
+            gameState.boss.hp = 3600;
             gameState.boss.pos.set(0, 0, -235);
             gameState.boss.facingYaw = 0;
             gameState.boss.defeatState = 'NONE';
@@ -4499,8 +4618,6 @@ class SoundSystem {
             materials.emissiveDeep.emissiveIntensity = 1.4;
             materials.emissiveHot.emissiveIntensity = 2.8;
 
-            const bossBarWrap = document.getElementById('boss-bar-wrapper');
-            if (bossBarWrap) bossBarWrap.style.opacity = '0';
 
             vulnerableTurbines.forEach(vt => {
                 vt.hp = vt.maxHp;
@@ -4522,7 +4639,17 @@ class SoundSystem {
             });
 
             applyPoseImmediate();
-            startJarvisWelcomeOnce();
+            if (renderer.xr.isPresenting) {
+                // Permanece en el equipo seleccionado durante la sesión VR.
+                gameState.isRunning = true;
+                startJarvisWelcomeOnce();
+            } else {
+                // Al reiniciar en PC se puede cambiar el equipo antes de iniciar otra ronda.
+                gameState.isRunning = false;
+                gameState.team = null;
+                document.body.classList.remove('game-active');
+            }
+            updateAllHUDs();
         }
 
         window.addEventListener('keydown', (e) => {
@@ -4532,6 +4659,10 @@ class SoundSystem {
                     else if (e.code === 'Backspace') inputJetpackDigit('BORRAR');
                     else if (e.code === 'Enter') submitJetpackPassword();
                 }
+                return;
+            }
+            if (e.code === 'KeyR' && gameState.isGameOver && gameState.battle.uploadStatus === 'error') {
+                submitBattleGrade(gameState.battle.result);
                 return;
             }
             keys[e.code] = true;
@@ -4581,6 +4712,7 @@ class SoundSystem {
         document.getElementById('start-btn').addEventListener('click', () => {
             document.body.classList.add('game-active');
             sound.init();
+            lockSelectedTeam();
             gameState.isRunning = true;
             startJarvisWelcomeOnce();
             if (vrButton && !renderer.xr.isPresenting) {
@@ -4608,19 +4740,15 @@ class SoundSystem {
             });
             document.body.appendChild(debugEl);
         }
+        let lastDebugRefresh = -Infinity;
         renderer.setAnimationLoop(() => {
-            const nowPerf = performance.now();
-            fpsFrameCount++;
-            if (nowPerf - fpsLastTime >= 250) {
-                currentFps = Math.round((fpsFrameCount * 1000) / (nowPerf - fpsLastTime));
-                fpsFrameCount = 0;
-                fpsLastTime = nowPerf;
-            }
-
             const dt = Math.min(clock.getDelta(), 0.05);
             const elapsedTime = clock.getElapsedTime();
 
-            if (gameState.isRunning) {
+            if (gameState.isRunning && !gameState.isGameOver) {
+                if (isBattleTimeExpired()) endExperience(false, 'Tiempo agotado');
+            }
+            if (gameState.isRunning && !gameState.isGameOver) {
                 updateFootstepArmorTremor(dt);
                 updatePlayerAndJetpack(dt, elapsedTime);
                 updateJetpackGuide(elapsedTime);
@@ -4641,9 +4769,10 @@ class SoundSystem {
 
             if (gameState.isRunning) updateContactShadows();
             renderer.render(scene, camera);
-            if (debugEl && fpsFrameCount === 0) {
-                const stats=renderer.info.render;
-                debugEl.textContent=`${visualProfile.toUpperCase()} | ${currentFps} FPS | ${stats.calls} draw calls | ${stats.triangles} tris | ${stats.points} points`;
+            if (debugEl && elapsedTime - lastDebugRefresh >= 0.75) {
+                lastDebugRefresh = elapsedTime;
+                const stats = renderer.info.render;
+                debugEl.textContent = `${visualProfile.toUpperCase()} | ${stats.calls} draw calls | ${stats.triangles} tris | ${stats.points} points`;
             }
         });
     </script>

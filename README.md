@@ -1,62 +1,70 @@
-# ULTRON: COLOSSAL AWAKENING VR — Jarvis y contraseña del jetpack
+# ULTRON: COLOSSAL AWAKENING VR — Batalla final CODEXIA
 
-Proyecto HTML / Three.js / WebXR para Meta Quest 3, Meta Quest Pro y navegador de escritorio. Continúa la edición anterior con Ultron de 562,5 m, suelo completamente negro, ondas circulares de lluvia, rayos de tormenta anteriores al encendido, pisadas con temblor, descarga de proximidad, armas ARC y efectos gráficos optimizados.
+Juego WebGL/WebXR en un sitio estático, preparado para **Meta Quest 3**, **Meta Quest Pro** y navegador de escritorio. Conserva los audios originales, Jarvis, contraseña del jetpack (`1122`), tormenta, partículas guía, pisadas y descargas.
 
-## Misiones y voces de Jarvis
+## Cambios de esta edición
 
-Los diálogos aparecen como cuadros flotantes con texto progresivo y reproducen los audios MP3 incluidos en la carpeta `public`. Las intervenciones de combate son de **una sola reproducción por partida** y se administran en cola para no superponer las voces. Los avisos de contraseña, derrota y victoria tienen prioridad.
+**Selección de equipo antes de iniciar:** en la pantalla inicial se elige entre los equipos **1 y 20** con los botones **− / +**. El enjambre de partículas de Jarvis solo aparece al comenzar la experiencia. Al reiniciar desde un ordenador se vuelve a mostrar el selector; durante una misma sesión inmersiva se conserva el equipo.
 
-| Momento | Texto de Jarvis |
+**Armas y turbinas:** cuatro colores de pistola: **amarillo, verde, rojo, azul**. Solo funciona la siguiente relación:
+
+| Pistola | Turbina vulnerable |
 |---|---|
-| Al entrar al juego | «Boss, sigue el enjambre de partículas. Te dirá adónde ir.» |
-| Al llegar al jetpack | «Coloca el password que descubrimos en el taller tres de Desarrollo Móvil.» |
-| Tras introducir la contraseña válida | «Boss, con el jetpack ahora puedes volar con el gatillo secundario izquierdo.» |
-| Al volar cerca de las turbinas | «Mira el color de las turbinas. Aprovecha las debilidades que aprendimos en el taller uno de Ciberseguridad.» |
-| Al apuntar y disparar hacia una turbina o impactarla | «No olvides que puedes cambiar de arma con el joystick derecho.» |
-| Tras avanzar el jefe durante la batalla | «¡Ya casi llega a Hermosillo! ¡Tienes que detenerlo!» |
-| Al perder toda la vida | «¡Boss, estás ahí! ¡Responde, responde, Boss!» |
-| Al derrotar a Ultron | «¡Boss, lo conseguiste! ¡Eres una leyenda!» |
+| Amarilla | Roja |
+| Roja | Verde |
+| Verde | Azul |
+| Azul | Amarilla |
 
-## Jetpack: clave 1122
+Los disparos de color incorrecto hacen **0 de daño** a la turbina. Cada turbina pasó de 300 a **900 puntos de vida** (triple resistencia). La salud global de Ultron no se presenta en el HUD.
 
-Al alcanzar el jetpack aparece un **teclado numérico virtual en VR**. Apunta a los números con cualquiera de los mandos, pulsa el gatillo para seleccionar `1`, `1`, `2`, `2` y después `OK`. Hay botones `BORRAR` y una señal luminosa que muestra hacia dónde apuntas. Hasta introducir la clave correcta no se puede equipar ni iniciar el despertar de Ultron.
+**Cronómetro:** **4:00**, sobre la vida del jugador, tanto en PC como en VR. Comienza **al tomar y desbloquear el jetpack**, justo cuando se inicia el despertar de Ultron, e incluye la cinemática. Si llega a **00:00** sin destruir las cuatro turbinas, la ronda termina. Si se destruye la cuarta turbina antes del límite, se detiene el contador y se registra la victoria en ese instante, aunque la animación de caída continúe.
 
-En escritorio aparece un formulario donde se escribe `1122` y se pulsa **DESBLOQUEAR JETPACK** o Enter. El sonido de vuelo de Jarvis se reproduce **después** de desbloquearlo. Con una clave incorrecta puede volver a intentarse sin perder progreso.
+## Calificación final de 0 a 100
 
-## Escena inicial ampliada
+Para una victoria dentro del límite:
 
-El jugador comienza ahora a unos **186 metros del jetpack**, en lugar de unos 20 metros. La velocidad de caminar durante la fase anterior al jetpack se ha ajustado a **13,5 m/s**, por lo que el desplazamiento frontal directo dura aproximadamente **14 segundos**. Se conservan los controles y la velocidad de vuelo de la versión anterior.
+- **40 % precisión:** impactos del color correcto en turbinas / total de disparos del jugador **desde que empieza el despertar**. Los disparos fallidos, los ataques a los orbes y los colores equivocados no cuentan como aciertos.
+- **35 % vida conservada:** `max(0, 1 − daño_recibido / 100)`. El daño recibido se acumula durante la batalla.
+- **25 % rapidez:** `max(0, 1 − segundos_transcurridos / 240)`.
 
-El enjambre contiene ahora **160 partículas**, se anima en GPU en una única llamada de dibujo y se adapta constantemente a la posición del jugador. Desaparece después del desbloqueo y reaparece al reiniciar.
+Se redondea al entero más cercano, entre **0 y 100**. En caso de derrota por daño o tiempo, la calificación del intento es **0**. El resultado muestra el equipo, nota, precisión, daño, tiempo y estado de publicación.
 
-## Despliegue GitHub / Render
+## Publicación automática a CODEXIA (Supabase)
 
-1. Extrae el ZIP y sube **el contenido** del directorio del proyecto a la raíz del repositorio; verifica que exista `public/index.html`.
-2. En Render usa **Static Site**, `Publish Directory: public` y `Build Command: echo "Sitio HTML estatico: no requiere compilacion"`. También puede utilizarse `render.yaml`.
-3. Sube **todos los 14 MP3 de `public/`** junto con `index.html` (8 diálogos Jarvis más 6 efectos grabados: disparos del jugador, disparos de Ultron, rugido, encendido, pisadas y jetpack).
-4. En Quest abre la URL HTTPS desde el navegador WebXR y selecciona la calidad correspondiente al visor.
+**Proyecto:** `codexia-scores`  
+**URL:** `https://zgpfcmvjmjfaphtudmis.supabase.co`  
+**Tabla:** `public.scores`  
+**RPC:** `public.registrar_taller(integer, integer, numeric)`  
+**Identificador de Batalla final:** `p_taller = 5` (asumimos talleres 1–4 y batalla final 5).
 
-La música de fondo permanece en su URL externa original. Three.js y los demás recursos CDN aún requieren conexión a Internet.
+Al **destruir la cuarta turbina**, **morir** o **agotar el tiempo**, se hace automáticamente **un solo POST por intento** a:
 
-## Verificación y límites
+`/rest/v1/rpc/registrar_taller`
 
-Se validaron la sintaxis JavaScript, las rutas de los 13 audios, su decodificación con `ffprobe`, el flujo de contraseña y la estructura del paquete. **No se ha probado físicamente en Meta Quest 3 o Quest Pro**, así que la interacción con los mandos, la visibilidad del teclado y el rendimiento deberán confirmarse en el visor.
+con cuerpo:
 
-## Actualización: jetpack grabado y huella exacta
+```json
+{"p_equipo":7,"p_taller":5,"p_puntaje":95}
+```
 
-- El **jetpack** usa exclusivamente `public/jetpack_ligero.mp3`, que se reproduce
-  en bucle solo mientras el jugador mantiene la propulsión. Se pausa al soltar
-  el control, al morir, al ganar, al reiniciar y al salir de VR.
-- Se retiró toda **síntesis de audio del juego** (osciladores de motor, lluvia,
-  trueno, ricochets, explosiones, rugido de acordes y efectos procedurales).
-  Permanecen los archivos MP3 del jugador, Ultron, Jarvis, pisadas y música.
-  Los eventos para los que no se proporcionó un audio grabado quedan sin
-  sonido adicional; sus efectos visuales se conservan.
-- Los anillos de impacto se centran bajo **marcadores unidos a las suelas de
-  las botas animadas**, usando sus posiciones mundiales reales y proyectando
-  el resultado al suelo negro. El choque de la caída final se centra debajo
-  del torso y el impacto de rodilla en el pie correspondiente.
-- El clip `jetpack_ligero.mp3` dura aproximadamente 0,91 s; por diseño se
-  repite mientras el propulsor está encendido.
-- Verificar las transiciones de reproducción y precisión del impacto en
-  Meta Quest Pro y Quest 3 antes de publicar la versión definitiva.
+El ejemplo anterior ilustra el formato; **el paquete NO envía notas de prueba**. En la partida se envían los valores reales. La clave pública `sb_publishable_...` está integrada en el HTML, como se solicitó; no se guarda ninguna clave secreta.
+
+**REQUISITO en Supabase:** la función `registrar_taller` debe aceptar el identificador **5** y tener permiso `EXECUTE` para el rol `anon`. Debe actualizar la columna `batalla_final` y guardar el mejor resultado (máximo), además de aplicar sus políticas de inserción/RLS correspondientes. El navegador debe poder realizar las llamadas CORS.
+
+El HUD final muestra **«GUARDADO EN CODEXIA»** solo cuando el servicio responde sin error. Si falla, aparece el error de envío: en PC pulsa **R** para reintentar; en VR apunta y dispara al **mensaje de error** en el panel final. No se necesita login; este mecanismo por sí solo no impide que usuarios externos falsifiquen puntuaciones (según el diseño proporcionado).
+
+## Desplegar en GitHub + Render
+
+1. Extrae el ZIP y abre la carpeta raíz (contiene `public/`, `render.yaml`, `README.md`, `.gitignore`).
+2. Sube **el contenido de la carpeta** al repositorio GitHub. No subas el ZIP sin descomprimir.
+3. En Render crea o actualiza un **Static Site** usando `public` como directorio de publicación. El `render.yaml` suministrado también permite el despliegue como Blueprint.
+4. Abre la URL HTTPS publicada desde el navegador Meta Quest o de escritorio. Se necesita Internet para Three.js, fuentes, soundtrack y Supabase.
+
+Los **15 MP3** de voces y efectos se alojan localmente en `public/`; no los elimines al publicar.
+
+## Pruebas y límites de validación
+
+- Se ha comprobado la **sintaxis ECMAScript** y que existen las referencias requeridas.
+- Se verificaron localmente con pruebas simuladas los límites de equipo, cálculo de notas, formato del POST, tiempo congelado al ganar, ausencia de duplicados y tratamiento de errores HTTP.
+- El **envío real a Supabase** no se ha probado ni se ha escrito ninguna nota en la base de datos: debe comprobarse con el proyecto configurado, permisos `anon` y `p_taller = 5`.
+- El comportamiento, legibilidad y rendimiento de WebXR requieren una prueba real en Quest 3 y Quest Pro.
